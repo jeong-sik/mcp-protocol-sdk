@@ -127,3 +127,8 @@ let format_sse_event ?event ?id data =
 let format_sse_json ?event ?id json =
   let data = Yojson.Safe.to_string json in
   format_sse_event ?event ?id data
+
+(** {2 Backward Compatibility Aliases} *)
+
+(** Alias for accepts_sse (legacy name) *)
+let accepts_sse_header = accepts_sse
