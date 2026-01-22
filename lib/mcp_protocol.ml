@@ -45,6 +45,12 @@ module Http_negotiation = Http_negotiation
 (** Protocol version handling *)
 module Version = Version
 
+(** Result types and progress tracking (Go SDK pattern) *)
+module Mcp_result = Mcp_result
+
+(** Session management and request tracking (Python SDK pattern) *)
+module Session = Session
+
 (** {1 Convenience Re-exports} *)
 
 (** Protocol version string *)
