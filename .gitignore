@@ -1,0 +1,14 @@
+# Dune build artifacts
+_build/
+*.install
+
+# Editor
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+
+# opam
+_opam/
