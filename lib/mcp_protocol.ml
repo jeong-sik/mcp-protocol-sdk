@@ -51,6 +51,14 @@ module Mcp_result = Mcp_result
 (** Session management and request tracking (Python SDK pattern) *)
 module Session = Session
 
+(** {1 Backward Compatibility Modules} *)
+
+(** Legacy Protocol module for existing code *)
+module Protocol = Protocol
+
+(** Legacy Resources module for existing code *)
+module Resources = Resources
+
 (** {1 Convenience Re-exports} *)
 
 (** Protocol version string *)
