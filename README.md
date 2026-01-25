@@ -14,6 +14,11 @@ MCP enables LLMs to interact with external tools, resources, and prompts through
 Setup 가이드: `docs/SETUP.md`  
 Install Checklist: `docs/INSTALL-CHECKLIST.md`
 
+## Quickstart
+
+```bash
+opam pin add mcp_protocol git+https://github.com/jeong-sik/mcp-protocol-sdk.git
+```
 ## Installation
 
 ```bash
