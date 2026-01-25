@@ -32,6 +32,11 @@ Or add to your `dune-project`:
  (mcp_protocol (>= 0.1.0)))
 ```
 
+## Docs
+
+- [Install Checklist](docs/INSTALL-CHECKLIST.md) - Post-install checks
+- [MCP Config Template](docs/MCP-TEMPLATE.md) - `~/.mcp.json` template (for servers)
+
 ## Usage
 
 ### Basic JSON-RPC Messages
