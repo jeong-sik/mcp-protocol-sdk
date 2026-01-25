@@ -11,6 +11,8 @@ MCP enables LLMs to interact with external tools, resources, and prompts through
 - **HTTP Negotiation** for content type handling
 - **Protocol Versioning** with negotiation support
 
+Setup 가이드: `docs/SETUP.md`
+
 ## Installation
 
 ```bash
