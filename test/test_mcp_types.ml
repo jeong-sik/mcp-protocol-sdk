@@ -35,6 +35,8 @@ let test_tool_roundtrip () =
       ("type", `String "object");
       ("properties", `Assoc []);
     ];
+    title = None;
+    annotations = None;
   } in
   let j = Mcp_types.tool_to_yojson tool in
   match Mcp_types.tool_of_yojson j with
@@ -48,6 +50,8 @@ let test_tool_no_description () =
     name = "minimal";
     description = None;
     input_schema = `Assoc [("type", `String "object")];
+    title = None;
+    annotations = None;
   } in
   let j = Mcp_types.tool_to_yojson tool in
   match Mcp_types.tool_of_yojson j with
@@ -62,6 +66,8 @@ let test_tool_def_alias () =
     name = "alias_test";
     description = Some "via alias";
     input_schema = `Assoc [];
+    title = None;
+    annotations = None;
   } in
   let j = Mcp_types.tool_to_yojson td in
   match Mcp_types.tool_of_yojson j with
@@ -422,6 +428,367 @@ let test_completion_result_has_more_key () =
       true (List.mem_assoc "hasMore" fields)
   | _ -> Alcotest.fail "expected object"
 
+(* --- content_annotations --- *)
+
+let test_content_annotations_roundtrip () =
+  let ann : Mcp_types.content_annotations = {
+    audience = Some [User; Assistant];
+    priority = Some 0.8;
+  } in
+  let j = Mcp_types.content_annotations_to_yojson ann in
+  match Mcp_types.content_annotations_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option (float 0.001))) "priority" (Some 0.8) decoded.priority;
+    Alcotest.(check bool) "audience present" true (Option.is_some decoded.audience)
+  | Error e -> Alcotest.fail e
+
+let test_content_annotations_empty () =
+  let ann : Mcp_types.content_annotations = {
+    audience = None;
+    priority = None;
+  } in
+  let j = Mcp_types.content_annotations_to_yojson ann in
+  match Mcp_types.content_annotations_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option (float 0.001))) "no priority" None decoded.priority;
+    Alcotest.(check bool) "no audience" true (Option.is_none decoded.audience)
+  | Error e -> Alcotest.fail e
+
+(* --- tool_annotations --- *)
+
+let test_tool_annotations_full () =
+  let ann : Mcp_types.tool_annotations = {
+    title = Some "My Tool";
+    read_only_hint = Some true;
+    destructive_hint = Some false;
+    idempotent_hint = Some true;
+    open_world_hint = Some false;
+  } in
+  let j = Mcp_types.tool_annotations_to_yojson ann in
+  (* Check JSON key names follow camelCase *)
+  (match j with
+   | `Assoc fields ->
+     Alcotest.(check bool) "readOnlyHint key"
+       true (List.mem_assoc "readOnlyHint" fields);
+     Alcotest.(check bool) "destructiveHint key"
+       true (List.mem_assoc "destructiveHint" fields)
+   | _ -> Alcotest.fail "expected object");
+  match Mcp_types.tool_annotations_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "title" (Some "My Tool") decoded.title;
+    Alcotest.(check (option bool)) "readOnly" (Some true) decoded.read_only_hint;
+    Alcotest.(check (option bool)) "destructive" (Some false) decoded.destructive_hint
+  | Error e -> Alcotest.fail e
+
+let test_tool_annotations_empty () =
+  let ann : Mcp_types.tool_annotations = {
+    title = None;
+    read_only_hint = None;
+    destructive_hint = None;
+    idempotent_hint = None;
+    open_world_hint = None;
+  } in
+  let j = Mcp_types.tool_annotations_to_yojson ann in
+  match Mcp_types.tool_annotations_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "no title" None decoded.title;
+    Alcotest.(check (option bool)) "no readOnly" None decoded.read_only_hint
+  | Error e -> Alcotest.fail e
+
+let test_tool_annotations_partial () =
+  let ann : Mcp_types.tool_annotations = {
+    title = None;
+    read_only_hint = Some true;
+    destructive_hint = None;
+    idempotent_hint = None;
+    open_world_hint = None;
+  } in
+  let j = Mcp_types.tool_annotations_to_yojson ann in
+  match Mcp_types.tool_annotations_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option bool)) "readOnly" (Some true) decoded.read_only_hint
+  | Error e -> Alcotest.fail e
+
+(* --- tool with annotations --- *)
+
+let test_tool_with_annotations () =
+  let ann : Mcp_types.tool_annotations = {
+    title = Some "Display Title";
+    read_only_hint = Some true;
+    destructive_hint = None;
+    idempotent_hint = None;
+    open_world_hint = None;
+  } in
+  let t = Mcp_types.make_tool ~name:"annotated"
+    ~description:"A tool with annotations"
+    ~title:"Display Title"
+    ~annotations:ann () in
+  Alcotest.(check (option string)) "title" (Some "Display Title") t.title;
+  Alcotest.(check bool) "annotations present" true (Option.is_some t.annotations);
+  let j = Mcp_types.tool_to_yojson t in
+  match Mcp_types.tool_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "decoded title" (Some "Display Title") decoded.title;
+    Alcotest.(check bool) "decoded annotations" true (Option.is_some decoded.annotations)
+  | Error e -> Alcotest.fail e
+
+let test_tool_without_annotations () =
+  let t = Mcp_types.make_tool ~name:"simple" () in
+  Alcotest.(check (option string)) "no title" None t.title;
+  Alcotest.(check bool) "no annotations" true (Option.is_none t.annotations);
+  let j = Mcp_types.tool_to_yojson t in
+  match Mcp_types.tool_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "decoded no title" None decoded.title;
+    Alcotest.(check bool) "decoded no ann" true (Option.is_none decoded.annotations)
+  | Error e -> Alcotest.fail e
+
+(* --- audio content --- *)
+
+let test_audio_content_roundtrip () =
+  let content = Mcp_types.AudioContent {
+    type_ = "audio";
+    data = "base64audiodata";
+    mime_type = "audio/wav";
+    annotations = None;
+  } in
+  let j = Mcp_types.tool_content_to_yojson content in
+  match Mcp_types.tool_content_of_yojson j with
+  | Ok (AudioContent { data; mime_type; _ }) ->
+    Alcotest.(check string) "data" "base64audiodata" data;
+    Alcotest.(check string) "mime_type" "audio/wav" mime_type
+  | Ok _ -> Alcotest.fail "expected AudioContent"
+  | Error e -> Alcotest.fail e
+
+let test_audio_content_with_annotations () =
+  let ann : Mcp_types.content_annotations = {
+    audience = Some [User];
+    priority = Some 0.5;
+  } in
+  let content = Mcp_types.AudioContent {
+    type_ = "audio";
+    data = "data";
+    mime_type = "audio/mp3";
+    annotations = Some ann;
+  } in
+  let j = Mcp_types.tool_content_to_yojson content in
+  match Mcp_types.tool_content_of_yojson j with
+  | Ok (AudioContent { annotations = Some decoded_ann; _ }) ->
+    Alcotest.(check (option (float 0.001))) "priority" (Some 0.5) decoded_ann.priority
+  | Ok (AudioContent { annotations = None; _ }) ->
+    Alcotest.fail "expected annotations"
+  | Ok _ -> Alcotest.fail "expected AudioContent"
+  | Error e -> Alcotest.fail e
+
+(* --- resource_link content --- *)
+
+let test_resource_link_content_roundtrip () =
+  let content = Mcp_types.ResourceLinkContent {
+    type_ = "resource_link";
+    uri = "file:///doc.md";
+    name = Some "doc.md";
+    description = Some "A document";
+    mime_type = Some "text/markdown";
+    annotations = None;
+  } in
+  let j = Mcp_types.tool_content_to_yojson content in
+  match Mcp_types.tool_content_of_yojson j with
+  | Ok (ResourceLinkContent { uri; name; description; mime_type; _ }) ->
+    Alcotest.(check string) "uri" "file:///doc.md" uri;
+    Alcotest.(check (option string)) "name" (Some "doc.md") name;
+    Alcotest.(check (option string)) "description" (Some "A document") description;
+    Alcotest.(check (option string)) "mime_type" (Some "text/markdown") mime_type
+  | Ok _ -> Alcotest.fail "expected ResourceLinkContent"
+  | Error e -> Alcotest.fail e
+
+let test_resource_link_content_minimal () =
+  let content = Mcp_types.ResourceLinkContent {
+    type_ = "resource_link";
+    uri = "file:///x";
+    name = None;
+    description = None;
+    mime_type = None;
+    annotations = None;
+  } in
+  let j = Mcp_types.tool_content_to_yojson content in
+  match Mcp_types.tool_content_of_yojson j with
+  | Ok (ResourceLinkContent { uri; name; _ }) ->
+    Alcotest.(check string) "uri" "file:///x" uri;
+    Alcotest.(check (option string)) "no name" None name
+  | Ok _ -> Alcotest.fail "expected ResourceLinkContent"
+  | Error e -> Alcotest.fail e
+
+(* --- tool_result with structured_content --- *)
+
+let test_tool_result_structured_content () =
+  let tr : Mcp_types.tool_result = {
+    content = [Mcp_types.TextContent { type_ = "text"; text = "ok"; annotations = None }];
+    is_error = None;
+    structured_content = Some (`Assoc [("key", `String "value")]);
+  } in
+  let j = Mcp_types.tool_result_to_yojson tr in
+  match Mcp_types.tool_result_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check bool) "structured present"
+      true (Option.is_some decoded.structured_content)
+  | Error e -> Alcotest.fail e
+
+let test_tool_result_no_structured_content () =
+  let tr = Mcp_types.tool_result_of_text "hello" in
+  let j = Mcp_types.tool_result_to_yojson tr in
+  match Mcp_types.tool_result_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check bool) "no structured"
+      true (Option.is_none decoded.structured_content)
+  | Error e -> Alcotest.fail e
+
+(* --- text content with annotations --- *)
+
+let test_text_content_with_annotations () =
+  let ann : Mcp_types.content_annotations = {
+    audience = Some [Assistant];
+    priority = Some 1.0;
+  } in
+  let content = Mcp_types.TextContent {
+    type_ = "text";
+    text = "annotated text";
+    annotations = Some ann;
+  } in
+  let j = Mcp_types.tool_content_to_yojson content in
+  match Mcp_types.tool_content_of_yojson j with
+  | Ok (TextContent { text; annotations = Some decoded_ann; _ }) ->
+    Alcotest.(check string) "text" "annotated text" text;
+    Alcotest.(check (option (float 0.001))) "priority" (Some 1.0) decoded_ann.priority
+  | Ok (TextContent { annotations = None; _ }) ->
+    Alcotest.fail "expected annotations on text content"
+  | Ok _ -> Alcotest.fail "expected TextContent"
+  | Error e -> Alcotest.fail e
+
+(* --- elicitation --- *)
+
+let test_elicitation_schema_roundtrip () =
+  let schema : Mcp_types.elicitation_schema = {
+    type_ = "object";
+    properties = [
+      ("name", `Assoc [("type", `String "string")]);
+      ("age", `Assoc [("type", `String "number")]);
+    ];
+    required = Some ["name"];
+  } in
+  let j = Mcp_types.elicitation_schema_to_yojson schema in
+  match Mcp_types.elicitation_schema_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check string) "type" "object" decoded.type_;
+    Alcotest.(check int) "properties count" 2 (List.length decoded.properties);
+    Alcotest.(check (option (list string))) "required" (Some ["name"]) decoded.required
+  | Error e -> Alcotest.fail e
+
+let test_elicitation_params_roundtrip () =
+  let schema : Mcp_types.elicitation_schema = {
+    type_ = "object";
+    properties = [("q", `Assoc [("type", `String "string")])];
+    required = None;
+  } in
+  let params : Mcp_types.elicitation_params = {
+    message = "Please enter your name";
+    requested_schema = Some schema;
+  } in
+  let j = Mcp_types.elicitation_params_to_yojson params in
+  (* Check requestedSchema key (camelCase) *)
+  (match j with
+   | `Assoc fields ->
+     Alcotest.(check bool) "requestedSchema key"
+       true (List.mem_assoc "requestedSchema" fields)
+   | _ -> Alcotest.fail "expected object");
+  match Mcp_types.elicitation_params_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check string) "message" "Please enter your name" decoded.message;
+    Alcotest.(check bool) "schema present" true (Option.is_some decoded.requested_schema)
+  | Error e -> Alcotest.fail e
+
+let test_elicitation_params_no_schema () =
+  let params : Mcp_types.elicitation_params = {
+    message = "Confirm?";
+    requested_schema = None;
+  } in
+  let j = Mcp_types.elicitation_params_to_yojson params in
+  match Mcp_types.elicitation_params_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check string) "message" "Confirm?" decoded.message;
+    Alcotest.(check bool) "no schema" true (Option.is_none decoded.requested_schema)
+  | Error e -> Alcotest.fail e
+
+let test_elicitation_action_roundtrip () =
+  let check_action action expected_str =
+    let j = Mcp_types.elicitation_action_to_yojson action in
+    Alcotest.(check json) ("action " ^ expected_str)
+      (`String expected_str) j;
+    Alcotest.(check (result pass string)) "parse back"
+      (Ok action) (Mcp_types.elicitation_action_of_yojson j)
+  in
+  check_action Accept "accept";
+  check_action Decline "decline";
+  check_action Cancel "cancel"
+
+let test_elicitation_result_accept () =
+  let result : Mcp_types.elicitation_result = {
+    action = Accept;
+    content = Some [("name", `String "Vincent"); ("age", `Int 30)];
+  } in
+  let j = Mcp_types.elicitation_result_to_yojson result in
+  match Mcp_types.elicitation_result_of_yojson j with
+  | Ok decoded ->
+    (match decoded.action with Accept -> () | _ -> Alcotest.fail "expected Accept");
+    Alcotest.(check bool) "content present" true (Option.is_some decoded.content);
+    let pairs = Option.get decoded.content in
+    Alcotest.(check int) "content pairs" 2 (List.length pairs)
+  | Error e -> Alcotest.fail e
+
+let test_elicitation_result_decline () =
+  let result : Mcp_types.elicitation_result = {
+    action = Decline;
+    content = None;
+  } in
+  let j = Mcp_types.elicitation_result_to_yojson result in
+  match Mcp_types.elicitation_result_of_yojson j with
+  | Ok decoded ->
+    (match decoded.action with Decline -> () | _ -> Alcotest.fail "expected Decline");
+    Alcotest.(check bool) "no content" true (Option.is_none decoded.content)
+  | Error e -> Alcotest.fail e
+
+(* --- completion_context --- *)
+
+let test_completion_context_roundtrip () =
+  let ctx : Mcp_types.completion_context = {
+    arguments = Some [("lang", "ocaml"); ("version", "5.4")];
+  } in
+  let j = Mcp_types.completion_context_to_yojson ctx in
+  match Mcp_types.completion_context_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check bool) "args present" true (Option.is_some decoded.arguments);
+    let args = Option.get decoded.arguments in
+    Alcotest.(check int) "arg count" 2 (List.length args);
+    Alcotest.(check string) "first key" "lang" (fst (List.hd args))
+  | Error e -> Alcotest.fail e
+
+let test_completion_context_empty () =
+  let ctx : Mcp_types.completion_context = { arguments = None } in
+  let j = Mcp_types.completion_context_to_yojson ctx in
+  match Mcp_types.completion_context_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check bool) "no args" true (Option.is_none decoded.arguments)
+  | Error e -> Alcotest.fail e
+
+(* --- unknown content type error --- *)
+
+let test_unknown_content_type () =
+  let j = `Assoc [("type", `String "video"); ("data", `String "x")] in
+  match Mcp_types.tool_content_of_yojson j with
+  | Error msg ->
+    Alcotest.(check bool) "mentions unknown type"
+      true (String.length msg > 0)
+  | Ok _ -> Alcotest.fail "expected error for unknown content type"
+
 (* --- Suite --- *)
 
 let () =
@@ -492,5 +859,48 @@ let () =
       Alcotest.test_case "make helper" `Quick test_make_completion_result;
       Alcotest.test_case "make minimal" `Quick test_make_completion_result_minimal;
       Alcotest.test_case "hasMore key" `Quick test_completion_result_has_more_key;
+    ];
+    "content_annotations", [
+      Alcotest.test_case "round-trip" `Quick test_content_annotations_roundtrip;
+      Alcotest.test_case "empty" `Quick test_content_annotations_empty;
+    ];
+    "tool_annotations", [
+      Alcotest.test_case "full" `Quick test_tool_annotations_full;
+      Alcotest.test_case "empty" `Quick test_tool_annotations_empty;
+      Alcotest.test_case "partial" `Quick test_tool_annotations_partial;
+    ];
+    "tool_with_annotations", [
+      Alcotest.test_case "with annotations" `Quick test_tool_with_annotations;
+      Alcotest.test_case "without annotations" `Quick test_tool_without_annotations;
+    ];
+    "audio_content", [
+      Alcotest.test_case "round-trip" `Quick test_audio_content_roundtrip;
+      Alcotest.test_case "with annotations" `Quick test_audio_content_with_annotations;
+    ];
+    "resource_link_content", [
+      Alcotest.test_case "round-trip" `Quick test_resource_link_content_roundtrip;
+      Alcotest.test_case "minimal" `Quick test_resource_link_content_minimal;
+    ];
+    "tool_result_structured", [
+      Alcotest.test_case "with structured" `Quick test_tool_result_structured_content;
+      Alcotest.test_case "without structured" `Quick test_tool_result_no_structured_content;
+    ];
+    "text_content_annotations", [
+      Alcotest.test_case "with annotations" `Quick test_text_content_with_annotations;
+    ];
+    "elicitation", [
+      Alcotest.test_case "schema round-trip" `Quick test_elicitation_schema_roundtrip;
+      Alcotest.test_case "params round-trip" `Quick test_elicitation_params_roundtrip;
+      Alcotest.test_case "params no schema" `Quick test_elicitation_params_no_schema;
+      Alcotest.test_case "action round-trip" `Quick test_elicitation_action_roundtrip;
+      Alcotest.test_case "result accept" `Quick test_elicitation_result_accept;
+      Alcotest.test_case "result decline" `Quick test_elicitation_result_decline;
+    ];
+    "completion_context", [
+      Alcotest.test_case "round-trip" `Quick test_completion_context_roundtrip;
+      Alcotest.test_case "empty" `Quick test_completion_context_empty;
+    ];
+    "content_type_errors", [
+      Alcotest.test_case "unknown type" `Quick test_unknown_content_type;
     ];
   ]

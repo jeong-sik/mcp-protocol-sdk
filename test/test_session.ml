@@ -1,6 +1,6 @@
 open Mcp_protocol
 
-(* --- Request_tracker --- *)
+(* --- Request_tracker (immutable API) --- *)
 
 let test_tracker_create () =
   let t = Session.Request_tracker.create () in
@@ -8,48 +8,90 @@ let test_tracker_create () =
 
 let test_tracker_track_and_complete () =
   let t = Session.Request_tracker.create () in
-  let id = Session.Request_tracker.next_id t in
-  let _req = Session.Request_tracker.track t ~id ~method_:"tools/list" () in
+  let (id, t) = Session.Request_tracker.next_id t in
+  let (_req, t) = Session.Request_tracker.track t ~id ~method_:"tools/list" () in
   Alcotest.(check int) "one pending" 1 (Session.Request_tracker.pending_count t);
-  let completed = Session.Request_tracker.complete t ~id ~response:(`String "ok") in
+  let (completed, t) = Session.Request_tracker.complete t ~id ~response:(`String "ok") in
   Alcotest.(check bool) "completed" true (Option.is_some completed);
   Alcotest.(check int) "none pending" 0 (Session.Request_tracker.pending_count t)
 
 let test_tracker_next_id_increments () =
   let t = Session.Request_tracker.create () in
-  let id1 = Session.Request_tracker.next_id t in
-  let id2 = Session.Request_tracker.next_id t in
+  let (id1, t) = Session.Request_tracker.next_id t in
+  let (id2, _t) = Session.Request_tracker.next_id t in
   Alcotest.(check bool) "ids differ"
     true (Session.request_id_to_yojson id1 <> Session.request_id_to_yojson id2)
 
 let test_tracker_cancel () =
   let t = Session.Request_tracker.create () in
-  let id = Session.Request_tracker.next_id t in
-  let _req = Session.Request_tracker.track t ~id ~method_:"tools/call" () in
-  let cancelled = Session.Request_tracker.cancel t ~id ~reason:(Some "user aborted") in
+  let (id, t) = Session.Request_tracker.next_id t in
+  let (_req, t) = Session.Request_tracker.track t ~id ~method_:"tools/call" () in
+  let (cancelled, t) = Session.Request_tracker.cancel t ~id ~reason:(Some "user aborted") in
   Alcotest.(check bool) "cancelled" true cancelled;
   Alcotest.(check int) "none pending" 0 (Session.Request_tracker.pending_count t)
 
 let test_tracker_cancel_nonexistent () =
   let t = Session.Request_tracker.create () in
-  let cancelled = Session.Request_tracker.cancel t ~id:(Int_id 999) ~reason:None in
+  let (cancelled, _t) = Session.Request_tracker.cancel t ~id:(Int_id 999) ~reason:None in
   Alcotest.(check bool) "not found" false cancelled
 
 let test_tracker_complete_nonexistent () =
   let t = Session.Request_tracker.create () in
-  let result = Session.Request_tracker.complete t ~id:(Int_id 999) ~response:`Null in
+  let (result, _t) = Session.Request_tracker.complete t ~id:(Int_id 999) ~response:`Null in
   Alcotest.(check bool) "not found" true (Option.is_none result)
 
 let test_tracker_cancel_all () =
   let t = Session.Request_tracker.create () in
-  let id1 = Session.Request_tracker.next_id t in
-  let id2 = Session.Request_tracker.next_id t in
-  let _r1 = Session.Request_tracker.track t ~id:id1 ~method_:"a" () in
-  let _r2 = Session.Request_tracker.track t ~id:id2 ~method_:"b" () in
+  let (id1, t) = Session.Request_tracker.next_id t in
+  let (id2, t) = Session.Request_tracker.next_id t in
+  let (_r1, t) = Session.Request_tracker.track t ~id:id1 ~method_:"a" () in
+  let (_r2, t) = Session.Request_tracker.track t ~id:id2 ~method_:"b" () in
   Alcotest.(check int) "two pending" 2 (Session.Request_tracker.pending_count t);
-  let cancelled = Session.Request_tracker.cancel_all t ~reason:"shutdown" in
+  let (cancelled, t) = Session.Request_tracker.cancel_all t ~reason:"shutdown" in
   Alcotest.(check int) "cancelled 2" 2 (List.length cancelled);
   Alcotest.(check int) "none pending" 0 (Session.Request_tracker.pending_count t)
+
+let test_tracker_immutability () =
+  let t0 = Session.Request_tracker.create () in
+  let (id, t1) = Session.Request_tracker.next_id t0 in
+  let (_req, t2) = Session.Request_tracker.track t1 ~id ~method_:"test" () in
+  Alcotest.(check int) "t0 still empty" 0 (Session.Request_tracker.pending_count t0);
+  Alcotest.(check int) "t1 still empty" 0 (Session.Request_tracker.pending_count t1);
+  Alcotest.(check int) "t2 has one" 1 (Session.Request_tracker.pending_count t2)
+
+let test_tracker_check_timeouts () =
+  let t = Session.Request_tracker.create () in
+  let (id, t) = Session.Request_tracker.next_id t in
+  let (_req, t) = Session.Request_tracker.track t ~id ~method_:"slow" ~timeout:0.0 () in
+  Unix.sleepf 0.01;
+  let (timed_out, t) = Session.Request_tracker.check_timeouts t in
+  Alcotest.(check int) "one timed out" 1 (List.length timed_out);
+  Alcotest.(check int) "none pending" 0 (Session.Request_tracker.pending_count t)
+
+let test_tracker_complete_returns_updated_request () =
+  let t = Session.Request_tracker.create () in
+  let (id, t) = Session.Request_tracker.next_id t in
+  let (_req, t) = Session.Request_tracker.track t ~id ~method_:"test" () in
+  let (completed, _t) = Session.Request_tracker.complete t ~id ~response:(`String "done") in
+  match completed with
+  | Some req ->
+    Alcotest.(check bool) "state is Completed"
+      true (req.state = Session.Completed);
+    Alcotest.(check bool) "response set"
+      true (Option.is_some req.response)
+  | None -> Alcotest.fail "expected completed request"
+
+let test_tracker_cancel_all_sets_error_state () =
+  let t = Session.Request_tracker.create () in
+  let (id, t) = Session.Request_tracker.next_id t in
+  let (_req, t) = Session.Request_tracker.track t ~id ~method_:"test" () in
+  let (cancelled, _t) = Session.Request_tracker.cancel_all t ~reason:"bye" in
+  match cancelled with
+  | [req] ->
+    (match req.state with
+     | Session.Error reason -> Alcotest.(check string) "reason" "bye" reason
+     | _ -> Alcotest.fail "expected Error state")
+  | _ -> Alcotest.fail "expected exactly one cancelled request"
 
 (* --- Session lifecycle --- *)
 
@@ -133,6 +175,10 @@ let () =
       Alcotest.test_case "cancel nonexistent" `Quick test_tracker_cancel_nonexistent;
       Alcotest.test_case "complete nonexistent" `Quick test_tracker_complete_nonexistent;
       Alcotest.test_case "cancel all" `Quick test_tracker_cancel_all;
+      Alcotest.test_case "immutability" `Quick test_tracker_immutability;
+      Alcotest.test_case "check timeouts" `Quick test_tracker_check_timeouts;
+      Alcotest.test_case "complete returns updated" `Quick test_tracker_complete_returns_updated_request;
+      Alcotest.test_case "cancel_all sets Error state" `Quick test_tracker_cancel_all_sets_error_state;
     ];
     "lifecycle", [
       Alcotest.test_case "to_string" `Quick test_lifecycle_to_string;

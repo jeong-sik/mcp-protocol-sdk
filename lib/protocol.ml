@@ -7,26 +7,14 @@
 (** Current MCP protocol version *)
 let protocol_version = Version.latest
 
-(** Tool definition type *)
-type tool = Mcp_types.tool = {
-  name: string;
-  description: string option;
-  input_schema: Yojson.Safe.t;
-}
+(** Tool definition type — re-export from Mcp_types *)
+type tool = Mcp_types.tool
 
-(** Resource definition type *)
-type resource = Mcp_types.resource = {
-  uri: string;
-  name: string;
-  description: string option;
-  mime_type: string option;
-}
+(** Resource definition type — re-export from Mcp_types *)
+type resource = Mcp_types.resource
 
-(** Server info *)
-type server_info = Mcp_types.server_info = {
-  name: string;
-  version: string;
-}
+(** Server info — re-export from Mcp_types *)
+type server_info = Mcp_types.server_info
 
 (** Server capabilities *)
 type capabilities = {
