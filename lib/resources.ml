@@ -1,49 +1,23 @@
 (** MCP Resources/ResourceTemplates helpers.
 
     Backward compatibility module.
-    Re-exports resource types with helpers for resources/* methods.
+    Re-exports resource types from Mcp_types with helpers for resources/* methods.
 *)
 
-type resource = Protocol.resource
+type resource = Mcp_types.resource
 
-type resource_template = {
-  uri_template : string;
-  name : string;
-  description : string option;
-  mime_type : string option;
-}
+type resource_template = Mcp_types.resource_template
 
-type content = {
-  uri : string;
-  mime_type : string;
-  text : string;
-}
+type content = Mcp_types.resource_contents
 
-let resource_template_to_json (t : resource_template) =
-  let base = [
-    ("uriTemplate", `String t.uri_template);
-    ("name", `String t.name);
-  ] in
-  let with_desc = match t.description with
-    | Some d -> base @ [("description", `String d)]
-    | None -> base
-  in
-  let with_mime = match t.mime_type with
-    | Some m -> with_desc @ [("mimeType", `String m)]
-    | None -> with_desc
-  in
-  `Assoc with_mime
+let resource_template_to_json = Mcp_types.resource_template_to_yojson
 
 let content_to_json (c : content) =
-  `Assoc [
-    ("uri", `String c.uri);
-    ("mimeType", `String c.mime_type);
-    ("text", `String c.text);
-  ]
+  Mcp_types.resource_contents_to_yojson c
 
 let list_result (resources : resource list) =
   `Assoc [
-    ("resources", `List (List.map Protocol.resource_to_json resources));
+    ("resources", `List (List.map Mcp_types.resource_to_yojson resources));
   ]
 
 let templates_list_result (templates : resource_template list) =
