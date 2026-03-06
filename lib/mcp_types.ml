@@ -40,6 +40,9 @@ type tool = {
 }
 [@@deriving yojson]
 
+(** Alias for figma-mcp compatibility *)
+type tool_def = tool
+
 (** Tool call result content types *)
 type tool_content =
   | TextContent of { type_: string; text: string }
@@ -248,3 +251,27 @@ let paginated_result_of_yojson item_of_yojson = function
     in
     items |> Result.map (fun items -> { items; next_cursor })
   | _ -> Error "Invalid paginated_result"
+
+(** {2 Convenience Constructors} *)
+
+(** Create a tool definition *)
+let make_tool ~name ?description ?(input_schema = `Assoc [("type", `String "object")]) () =
+  { name; description; input_schema }
+
+(** Create a resource definition *)
+let make_resource ~uri ~name ?description ?mime_type () =
+  { uri; name; description; mime_type }
+
+(** Create a prompt definition *)
+let make_prompt ~name ?description ?arguments () =
+  { name; description; arguments }
+
+(** {2 Tool Result Helpers} *)
+
+(** Create a text tool result *)
+let tool_result_of_text text =
+  { content = [TextContent { type_ = "text"; text }]; is_error = None }
+
+(** Create an error tool result *)
+let tool_result_of_error message =
+  { content = [TextContent { type_ = "text"; text = message }]; is_error = Some true }

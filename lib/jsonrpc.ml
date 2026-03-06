@@ -127,3 +127,10 @@ let make_error ~id ~code ~message ?data () =
     id;
     error = { code; message; data }
   }
+
+(** Parse a JSON-RPC message from a JSON string *)
+let message_of_string s =
+  match Yojson.Safe.from_string s with
+  | json -> message_of_yojson json
+  | exception Yojson.Json_error msg ->
+    Error (Printf.sprintf "JSON parse error: %s" msg)
