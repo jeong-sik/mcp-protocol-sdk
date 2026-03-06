@@ -249,6 +249,179 @@ let test_tool_result_of_error () =
   let tr = Mcp_types.tool_result_of_error "something failed" in
   Alcotest.(check (option bool)) "is error" (Some true) tr.is_error
 
+(* --- root --- *)
+
+let test_root_roundtrip () =
+  let r : Mcp_types.root = {
+    uri = "file:///home/user/project";
+    name = Some "My Project";
+  } in
+  let j = Mcp_types.root_to_yojson r in
+  match Mcp_types.root_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check string) "uri" "file:///home/user/project" decoded.uri;
+    Alcotest.(check (option string)) "name" (Some "My Project") decoded.name
+  | Error e -> Alcotest.fail e
+
+let test_root_no_name () =
+  let r : Mcp_types.root = {
+    uri = "file:///tmp";
+    name = None;
+  } in
+  let j = Mcp_types.root_to_yojson r in
+  match Mcp_types.root_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check string) "uri" "file:///tmp" decoded.uri;
+    Alcotest.(check (option string)) "no name" None decoded.name
+  | Error e -> Alcotest.fail e
+
+let test_make_root () =
+  let r = Mcp_types.make_root ~uri:"file:///a" ~name:"a" () in
+  Alcotest.(check string) "uri" "file:///a" r.uri;
+  Alcotest.(check (option string)) "name" (Some "a") r.name
+
+let test_make_root_minimal () =
+  let r = Mcp_types.make_root ~uri:"file:///b" () in
+  Alcotest.(check (option string)) "no name" None r.name
+
+(* --- roots_capability --- *)
+
+let test_roots_capability_roundtrip () =
+  let cap : Mcp_types.roots_capability = {
+    list_changed = Some true;
+  } in
+  let j = Mcp_types.roots_capability_to_yojson cap in
+  Alcotest.(check json) "listChanged key"
+    (`Assoc [("listChanged", `Bool true)]) j;
+  match Mcp_types.roots_capability_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option bool)) "list_changed" (Some true) decoded.list_changed
+  | Error e -> Alcotest.fail e
+
+let test_roots_capability_none () =
+  let cap : Mcp_types.roots_capability = { list_changed = None } in
+  let j = Mcp_types.roots_capability_to_yojson cap in
+  match Mcp_types.roots_capability_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option bool)) "none" None decoded.list_changed
+  | Error e -> Alcotest.fail e
+
+(* --- completion_reference --- *)
+
+let test_completion_ref_prompt_roundtrip () =
+  let ref_ = Mcp_types.Prompt_ref { name = "code_review" } in
+  let j = Mcp_types.completion_reference_to_yojson ref_ in
+  Alcotest.(check json) "type field"
+    (`String "ref/prompt")
+    (match j with `Assoc f -> List.assoc "type" f | _ -> `Null);
+  match Mcp_types.completion_reference_of_yojson j with
+  | Ok (Prompt_ref { name }) ->
+    Alcotest.(check string) "name" "code_review" name
+  | Ok (Resource_ref _) -> Alcotest.fail "expected Prompt_ref"
+  | Error e -> Alcotest.fail e
+
+let test_completion_ref_resource_roundtrip () =
+  let ref_ = Mcp_types.Resource_ref { uri = "file:///doc.md" } in
+  let j = Mcp_types.completion_reference_to_yojson ref_ in
+  match Mcp_types.completion_reference_of_yojson j with
+  | Ok (Resource_ref { uri }) ->
+    Alcotest.(check string) "uri" "file:///doc.md" uri
+  | Ok (Prompt_ref _) -> Alcotest.fail "expected Resource_ref"
+  | Error e -> Alcotest.fail e
+
+let test_completion_ref_unknown_type () =
+  let j = `Assoc [("type", `String "ref/unknown"); ("x", `String "y")] in
+  match Mcp_types.completion_reference_of_yojson j with
+  | Error msg ->
+    Alcotest.(check bool) "contains 'unknown type'"
+      true (String.length msg > 0)
+  | Ok _ -> Alcotest.fail "expected error for unknown type"
+
+let test_completion_ref_missing_type () =
+  let j = `Assoc [("name", `String "test")] in
+  match Mcp_types.completion_reference_of_yojson j with
+  | Error _ -> ()
+  | Ok _ -> Alcotest.fail "expected error for missing type"
+
+let test_completion_ref_not_object () =
+  match Mcp_types.completion_reference_of_yojson (`String "bad") with
+  | Error _ -> ()
+  | Ok _ -> Alcotest.fail "expected error for non-object"
+
+(* --- completion_argument --- *)
+
+let test_completion_argument_roundtrip () =
+  let arg : Mcp_types.completion_argument = {
+    name = "language";
+    value = "oc";
+  } in
+  let j = Mcp_types.completion_argument_to_yojson arg in
+  match Mcp_types.completion_argument_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check string) "name" "language" decoded.name;
+    Alcotest.(check string) "value" "oc" decoded.value
+  | Error e -> Alcotest.fail e
+
+let test_make_completion_argument () =
+  let arg = Mcp_types.make_completion_argument ~name:"x" ~value:"y" in
+  Alcotest.(check string) "name" "x" arg.name;
+  Alcotest.(check string) "value" "y" arg.value
+
+(* --- completion_result --- *)
+
+let test_completion_result_roundtrip () =
+  let cr : Mcp_types.completion_result = {
+    values = ["ocaml"; "ocamlformat"];
+    total = Some 5;
+    has_more = Some true;
+  } in
+  let j = Mcp_types.completion_result_to_yojson cr in
+  match Mcp_types.completion_result_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check int) "values count" 2 (List.length decoded.values);
+    Alcotest.(check (option int)) "total" (Some 5) decoded.total;
+    Alcotest.(check (option bool)) "has_more" (Some true) decoded.has_more
+  | Error e -> Alcotest.fail e
+
+let test_completion_result_minimal () =
+  let cr : Mcp_types.completion_result = {
+    values = [];
+    total = None;
+    has_more = None;
+  } in
+  let j = Mcp_types.completion_result_to_yojson cr in
+  match Mcp_types.completion_result_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check int) "empty values" 0 (List.length decoded.values);
+    Alcotest.(check (option int)) "no total" None decoded.total;
+    Alcotest.(check (option bool)) "no has_more" None decoded.has_more
+  | Error e -> Alcotest.fail e
+
+let test_make_completion_result () =
+  let cr = Mcp_types.make_completion_result
+    ~values:["a"; "b"] ~total:10 ~has_more:true () in
+  Alcotest.(check int) "values" 2 (List.length cr.values);
+  Alcotest.(check (option int)) "total" (Some 10) cr.total;
+  Alcotest.(check (option bool)) "has_more" (Some true) cr.has_more
+
+let test_make_completion_result_minimal () =
+  let cr = Mcp_types.make_completion_result ~values:[] () in
+  Alcotest.(check (option int)) "no total" None cr.total;
+  Alcotest.(check (option bool)) "no has_more" None cr.has_more
+
+let test_completion_result_has_more_key () =
+  let cr : Mcp_types.completion_result = {
+    values = ["x"];
+    total = None;
+    has_more = Some false;
+  } in
+  let j = Mcp_types.completion_result_to_yojson cr in
+  match j with
+  | `Assoc fields ->
+    Alcotest.(check bool) "hasMore key exists"
+      true (List.mem_assoc "hasMore" fields)
+  | _ -> Alcotest.fail "expected object"
+
 (* --- Suite --- *)
 
 let () =
@@ -291,5 +464,33 @@ let () =
     "tool_result_helpers", [
       Alcotest.test_case "of_text" `Quick test_tool_result_of_text;
       Alcotest.test_case "of_error" `Quick test_tool_result_of_error;
+    ];
+    "root", [
+      Alcotest.test_case "round-trip" `Quick test_root_roundtrip;
+      Alcotest.test_case "no name" `Quick test_root_no_name;
+      Alcotest.test_case "make_root" `Quick test_make_root;
+      Alcotest.test_case "make_root minimal" `Quick test_make_root_minimal;
+    ];
+    "roots_capability", [
+      Alcotest.test_case "round-trip" `Quick test_roots_capability_roundtrip;
+      Alcotest.test_case "none" `Quick test_roots_capability_none;
+    ];
+    "completion_reference", [
+      Alcotest.test_case "prompt round-trip" `Quick test_completion_ref_prompt_roundtrip;
+      Alcotest.test_case "resource round-trip" `Quick test_completion_ref_resource_roundtrip;
+      Alcotest.test_case "unknown type" `Quick test_completion_ref_unknown_type;
+      Alcotest.test_case "missing type" `Quick test_completion_ref_missing_type;
+      Alcotest.test_case "not object" `Quick test_completion_ref_not_object;
+    ];
+    "completion_argument", [
+      Alcotest.test_case "round-trip" `Quick test_completion_argument_roundtrip;
+      Alcotest.test_case "make helper" `Quick test_make_completion_argument;
+    ];
+    "completion_result", [
+      Alcotest.test_case "round-trip" `Quick test_completion_result_roundtrip;
+      Alcotest.test_case "minimal" `Quick test_completion_result_minimal;
+      Alcotest.test_case "make helper" `Quick test_make_completion_result;
+      Alcotest.test_case "make minimal" `Quick test_make_completion_result_minimal;
+      Alcotest.test_case "hasMore key" `Quick test_completion_result_has_more_key;
     ];
   ]

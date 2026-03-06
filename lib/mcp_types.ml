@@ -275,3 +275,80 @@ let tool_result_of_text text =
 (** Create an error tool result *)
 let tool_result_of_error message =
   { content = [TextContent { type_ = "text"; text = message }]; is_error = Some true }
+
+(** {2 Roots} *)
+
+(** A root that a client exposes to the server (filesystem/workspace root).
+    Reference: https://modelcontextprotocol.io/docs/concepts/roots *)
+type root = {
+  uri: string;
+  name: string option; [@default None]
+}
+[@@deriving yojson]
+
+(** Capability for roots — declares whether the client supports
+    roots/list_changed notifications. *)
+type roots_capability = {
+  list_changed: bool option; [@default None] [@key "listChanged"]
+}
+[@@deriving yojson]
+
+(** Create a root value *)
+let make_root ~uri ?name () = { uri; name }
+
+(** {2 Completion} *)
+
+(** Reference to the item being completed — either a prompt or a resource.
+    MCP spec uses a "type" discriminator field:
+    - \{ "type": "ref/prompt", "name": "..." \}
+    - \{ "type": "ref/resource", "uri": "..." \}
+*)
+type completion_reference =
+  | Prompt_ref of { name: string }
+  | Resource_ref of { uri: string }
+
+let completion_reference_to_yojson = function
+  | Prompt_ref { name } ->
+    `Assoc [("type", `String "ref/prompt"); ("name", `String name)]
+  | Resource_ref { uri } ->
+    `Assoc [("type", `String "ref/resource"); ("uri", `String uri)]
+
+let completion_reference_of_yojson = function
+  | `Assoc fields -> begin
+    match List.assoc_opt "type" fields with
+    | Some (`String "ref/prompt") -> begin
+      match List.assoc_opt "name" fields with
+      | Some (`String name) -> Ok (Prompt_ref { name })
+      | _ -> Error "completion_reference: ref/prompt missing 'name'"
+    end
+    | Some (`String "ref/resource") -> begin
+      match List.assoc_opt "uri" fields with
+      | Some (`String uri) -> Ok (Resource_ref { uri })
+      | _ -> Error "completion_reference: ref/resource missing 'uri'"
+    end
+    | Some (`String t) -> Error ("completion_reference: unknown type " ^ t)
+    | _ -> Error "completion_reference: missing 'type'"
+  end
+  | _ -> Error "completion_reference: expected object"
+
+(** Argument to complete — the name and current partial value *)
+type completion_argument = {
+  name: string;
+  value: string;
+}
+[@@deriving yojson]
+
+(** Create a completion argument *)
+let make_completion_argument ~name ~value = { name; value }
+
+(** Result of completion/complete — a list of suggested values *)
+type completion_result = {
+  values: string list;
+  total: int option; [@default None]
+  has_more: bool option; [@default None] [@key "hasMore"]
+}
+[@@deriving yojson]
+
+(** Create a completion result *)
+let make_completion_result ~values ?total ?has_more () =
+  { values; total; has_more }
