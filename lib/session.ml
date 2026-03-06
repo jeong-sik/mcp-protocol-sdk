@@ -103,10 +103,10 @@ module Request_tracker = struct
     match RequestMap.find_opt id t.requests with
     | Some req ->
       let state = match reason with Some r -> Error r | None -> Cancelled in
-      let _req' = { req with state } in
+      let req' = { req with state } in
       let t' = { t with requests = RequestMap.remove id t.requests } in
-      (true, t')
-    | None -> (false, t)
+      (Some req', t')
+    | None -> (None, t)
 
   let pending_count t = RequestMap.cardinal t.requests
 

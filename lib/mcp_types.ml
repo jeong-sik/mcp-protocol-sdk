@@ -180,8 +180,10 @@ let tool_content_to_yojson = function
 
 let parse_annotations fields =
   match List.assoc_opt "annotations" fields with
-  | Some j -> (match content_annotations_of_yojson j with Ok a -> Some a | Error _ -> None)
-  | None -> None
+  | Some j -> (match content_annotations_of_yojson j with
+    | Ok a -> Ok (Some a)
+    | Error e -> Error ("content annotations: " ^ e))
+  | None -> Ok None
 
 let tool_content_of_yojson = function
   | `Assoc fields -> begin
@@ -190,9 +192,10 @@ let tool_content_of_yojson = function
       let text = match List.assoc_opt "text" fields with
         | Some (`String s) -> Ok s | _ -> Error "TextContent: missing 'text'"
       in
-      Result.map (fun text ->
-        TextContent { type_ = "text"; text; annotations = parse_annotations fields }
-      ) text
+      Result.bind text (fun text ->
+        Result.map (fun annotations ->
+          TextContent { type_ = "text"; text; annotations }
+        ) (parse_annotations fields))
     | Some (`String "image") ->
       let data = match List.assoc_opt "data" fields with
         | Some (`String s) -> Ok s | _ -> Error "ImageContent: missing 'data'"
@@ -202,7 +205,9 @@ let tool_content_of_yojson = function
       in
       (match data, mime_type with
        | Ok data, Ok mime_type ->
-         Ok (ImageContent { type_ = "image"; data; mime_type; annotations = parse_annotations fields })
+         Result.map (fun annotations ->
+           ImageContent { type_ = "image"; data; mime_type; annotations }
+         ) (parse_annotations fields)
        | Error e, _ | _, Error e -> Error e)
     | Some (`String "audio") ->
       let data = match List.assoc_opt "data" fields with
@@ -213,16 +218,19 @@ let tool_content_of_yojson = function
       in
       (match data, mime_type with
        | Ok data, Ok mime_type ->
-         Ok (AudioContent { type_ = "audio"; data; mime_type; annotations = parse_annotations fields })
+         Result.map (fun annotations ->
+           AudioContent { type_ = "audio"; data; mime_type; annotations }
+         ) (parse_annotations fields)
        | Error e, _ | _, Error e -> Error e)
     | Some (`String "resource") ->
       let resource = match List.assoc_opt "resource" fields with
         | Some j -> embedded_resource_of_yojson j
         | None -> Error "ResourceContent: missing 'resource'"
       in
-      Result.map (fun resource ->
-        ResourceContent { type_ = "resource"; resource; annotations = parse_annotations fields }
-      ) resource
+      Result.bind resource (fun resource ->
+        Result.map (fun annotations ->
+          ResourceContent { type_ = "resource"; resource; annotations }
+        ) (parse_annotations fields))
     | Some (`String "resource_link") ->
       let uri = match List.assoc_opt "uri" fields with
         | Some (`String s) -> Ok s | _ -> Error "ResourceLinkContent: missing 'uri'"
@@ -236,12 +244,13 @@ let tool_content_of_yojson = function
       let mime_type = match List.assoc_opt "mimeType" fields with
         | Some (`String s) -> Some s | _ -> None
       in
-      Result.map (fun uri ->
-        ResourceLinkContent {
-          type_ = "resource_link"; uri; name; description;
-          mime_type; annotations = parse_annotations fields;
-        }
-      ) uri
+      Result.bind uri (fun uri ->
+        Result.map (fun annotations ->
+          ResourceLinkContent {
+            type_ = "resource_link"; uri; name; description;
+            mime_type; annotations;
+          }
+        ) (parse_annotations fields))
     | Some (`String t) -> Error ("tool_content: unknown type " ^ t)
     | _ -> Error "tool_content: missing 'type'"
   end

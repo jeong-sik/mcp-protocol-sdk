@@ -27,13 +27,17 @@ let test_tracker_cancel () =
   let (id, t) = Session.Request_tracker.next_id t in
   let (_req, t) = Session.Request_tracker.track t ~id ~method_:"tools/call" () in
   let (cancelled, t) = Session.Request_tracker.cancel t ~id ~reason:(Some "user aborted") in
-  Alcotest.(check bool) "cancelled" true cancelled;
+  Alcotest.(check bool) "cancelled" true (Option.is_some cancelled);
+  (match cancelled with
+   | Some req -> Alcotest.(check bool) "has Error state"
+       true (match req.state with Session.Error _ -> true | _ -> false)
+   | None -> Alcotest.fail "expected cancelled request");
   Alcotest.(check int) "none pending" 0 (Session.Request_tracker.pending_count t)
 
 let test_tracker_cancel_nonexistent () =
   let t = Session.Request_tracker.create () in
   let (cancelled, _t) = Session.Request_tracker.cancel t ~id:(Int_id 999) ~reason:None in
-  Alcotest.(check bool) "not found" false cancelled
+  Alcotest.(check bool) "not found" true (Option.is_none cancelled)
 
 let test_tracker_complete_nonexistent () =
   let t = Session.Request_tracker.create () in
