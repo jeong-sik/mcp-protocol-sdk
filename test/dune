@@ -6,5 +6,8 @@
   test_version
   test_http_negotiation
   test_session
-  test_mcp_result)
+  test_mcp_result
+  test_logging
+  test_sampling
+  test_notifications)
  (libraries mcp_protocol alcotest))

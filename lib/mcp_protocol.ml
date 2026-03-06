@@ -51,6 +51,15 @@ module Mcp_result = Mcp_result
 (** Session management and request tracking (Python SDK pattern) *)
 module Session = Session
 
+(** MCP logging types and utilities *)
+module Logging = Logging
+
+(** MCP sampling types (LLM createMessage) *)
+module Sampling = Sampling
+
+(** MCP method string constants *)
+module Notifications = Notifications
+
 (** {1 Backward Compatibility Modules} *)
 
 (** Legacy Protocol module for existing code *)
