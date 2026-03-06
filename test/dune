@@ -1,0 +1,10 @@
+(tests
+ (names
+  test_jsonrpc
+  test_mcp_types
+  test_error_codes
+  test_version
+  test_http_negotiation
+  test_session
+  test_mcp_result)
+ (libraries mcp_protocol alcotest))
