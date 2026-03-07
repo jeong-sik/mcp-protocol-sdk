@@ -57,6 +57,7 @@ Provides SSE encoding/broadcasting, session management, and HTTP server/client."
   (mcp_protocol (= :version))
   (mcp_protocol_eio (= :version))
   (eio (>= 1.0))
+  (cohttp-eio (>= 6.0))
   (yojson (>= 2.0))
   (alcotest :with-test)
   (eio_main :with-test)))
