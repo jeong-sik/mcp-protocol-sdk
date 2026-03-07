@@ -25,9 +25,12 @@ open Mcp_protocol
 type t
 
 (** Create a client connected to the given I/O flows.
+    @param clock  Eio clock used for response timeouts.
+    @param timeout Maximum seconds to wait for a response (default: 30.0).
     @param stdin  Source to read server responses from.
     @param stdout Sink to write requests to the server. *)
-val create : stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> t
+val create : clock:_ Eio.Time.clock -> ?timeout:float ->
+  stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> unit -> t
 
 (** {2 Lifecycle} *)
 

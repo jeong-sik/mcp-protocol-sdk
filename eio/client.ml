@@ -2,36 +2,47 @@
 
 open Mcp_protocol
 
+let default_timeout = 30.0
+
 type t = {
   transport: Stdio_transport.t;
+  with_timeout: 'a. (unit -> 'a) -> 'a;
+  timeout: float;
   mutable next_id: int;
 }
 
-let create ~stdin ~stdout = {
+let create ~clock ?(timeout = default_timeout) ~stdin ~stdout () = {
   transport = Stdio_transport.create ~stdin ~stdout;
+  with_timeout = (fun f -> Eio.Time.with_timeout_exn clock timeout f);
+  timeout;
   next_id = 1;
 }
 
 (* ── request/response ─────────────────────────────── *)
 
 let read_response t expected_id =
-  let rec loop () =
-    match Stdio_transport.read t.transport with
-    | None -> Error "Connection closed"
-    | Some (Error e) -> Error (Printf.sprintf "Read error: %s" e)
-    | Some (Ok msg) ->
-      begin match msg with
-      | Jsonrpc.Response resp when resp.id = expected_id ->
-        Ok resp.result
-      | Jsonrpc.Error err when err.id = expected_id ->
-        Error err.error.message
-      | Jsonrpc.Notification _ ->
-        loop ()
-      | _ ->
-        loop ()
-      end
+  let read_loop () =
+    let rec loop () =
+      match Stdio_transport.read t.transport with
+      | None -> Error "Connection closed"
+      | Some (Error e) -> Error (Printf.sprintf "Read error: %s" e)
+      | Some (Ok msg) ->
+        begin match msg with
+        | Jsonrpc.Response resp when resp.id = expected_id ->
+          Ok resp.result
+        | Jsonrpc.Error err when err.id = expected_id ->
+          Error err.error.message
+        | Jsonrpc.Notification _ ->
+          loop ()
+        | _ ->
+          loop ()
+        end
+    in
+    loop ()
   in
-  loop ()
+  try t.with_timeout read_loop
+  with Eio.Time.Timeout ->
+    Error (Printf.sprintf "Response timed out after %.0fs" t.timeout)
 
 let send_request t ~method_ ?params () =
   let id = Jsonrpc.Int t.next_id in
@@ -52,11 +63,21 @@ let parse_list_field field_name parser result =
   | `Assoc fields ->
     begin match List.assoc_opt field_name fields with
     | Some (`List items) ->
+      let total = List.length items in
       let parsed = List.filter_map (fun j ->
         match parser j with
         | Ok v -> Some v
-        | Error _ -> None
+        | Error e ->
+          Printf.eprintf
+            "[mcp-client] warning: dropped unparseable '%s' item: %s\n%!"
+            field_name e;
+          None
       ) items in
+      let parsed_count = List.length parsed in
+      if parsed_count < total then
+        Printf.eprintf
+          "[mcp-client] warning: parsed %d/%d '%s' items (%d dropped)\n%!"
+          parsed_count total field_name (total - parsed_count);
       Ok parsed
     | _ -> Error (Printf.sprintf "Missing '%s' array in response" field_name)
     end

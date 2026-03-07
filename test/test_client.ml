@@ -7,14 +7,15 @@ open Mcp_protocol
 (** Run a client test with pre-built server responses.
     Returns (callback_result, list_of_json_messages_client_sent). *)
 let run_client_test responses fn =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun env ->
   let input_str =
     String.concat "\n" (List.map Yojson.Safe.to_string responses) ^ "\n"
   in
   let source = Eio.Flow.string_source input_str in
   let buf = Buffer.create 1024 in
   let sink = Eio.Flow.buffer_sink buf in
-  let client = Mcp_protocol_eio.Client.create ~stdin:source ~stdout:sink in
+  let clock = Eio.Stdenv.clock env in
+  let client = Mcp_protocol_eio.Client.create ~clock ~stdin:source ~stdout:sink () in
   let result = fn client in
   let output = Buffer.contents buf in
   let sent =
