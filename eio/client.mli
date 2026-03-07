@@ -81,8 +81,9 @@ val ping : t -> (unit, string) result
 
 (** {2 Tools} *)
 
-(** List all tools available on the server. *)
-val list_tools : t -> (Mcp_types.tool list, string) result
+(** List tools available on the server.
+    @param cursor Optional pagination cursor from a previous response. *)
+val list_tools : ?cursor:string -> t -> (Mcp_types.tool list, string) result
 
 (** Call a tool by name with optional JSON arguments. *)
 val call_tool : t -> name:string -> ?arguments:Yojson.Safe.t -> unit ->
@@ -90,17 +91,25 @@ val call_tool : t -> name:string -> ?arguments:Yojson.Safe.t -> unit ->
 
 (** {2 Resources} *)
 
-(** List all resources available on the server. *)
-val list_resources : t -> (Mcp_types.resource list, string) result
+(** List resources available on the server.
+    @param cursor Optional pagination cursor from a previous response. *)
+val list_resources : ?cursor:string -> t -> (Mcp_types.resource list, string) result
 
 (** Read a resource by its URI. *)
 val read_resource : t -> uri:string ->
   (Mcp_types.resource_contents list, string) result
 
+(** Subscribe to change notifications for a resource URI. *)
+val subscribe_resource : t -> uri:string -> (unit, string) result
+
+(** Unsubscribe from change notifications for a resource URI. *)
+val unsubscribe_resource : t -> uri:string -> (unit, string) result
+
 (** {2 Prompts} *)
 
-(** List all prompts available on the server. *)
-val list_prompts : t -> (Mcp_types.prompt list, string) result
+(** List prompts available on the server.
+    @param cursor Optional pagination cursor from a previous response. *)
+val list_prompts : ?cursor:string -> t -> (Mcp_types.prompt list, string) result
 
 (** Get a prompt by name with optional string arguments. *)
 val get_prompt : t -> name:string -> ?arguments:(string * string) list -> unit ->

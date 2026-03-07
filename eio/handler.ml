@@ -46,12 +46,14 @@ type t = {
   resources: registered_resource list;
   prompts: registered_prompt list;
   completion_handler: completion_handler option;
+  mutable subscribed_uris: string list;
 }
 
 let create ~name ~version ?instructions () =
   { name; version; instructions;
     tools = []; resources = []; prompts = [];
-    completion_handler = None }
+    completion_handler = None;
+    subscribed_uris = [] }
 
 let add_tool tool handler s =
   { s with tools = s.tools @ [{ tool; handler }] }
@@ -73,6 +75,7 @@ let instructions s = s.instructions
 let tools s = List.map (fun rt -> rt.tool) s.tools
 let resources s = List.map (fun rr -> rr.resource) s.resources
 let prompts s = List.map (fun rp -> rp.prompt) s.prompts
+let subscribed_uris s = s.subscribed_uris
 
 (* ── capabilities ─────────────────────────────────────── *)
 
@@ -83,7 +86,7 @@ let server_capabilities s =
   in
   let resources_cap =
     if s.resources = [] then None
-    else Some (`Assoc [("listChanged", `Bool false)])
+    else Some (`Assoc [("listChanged", `Bool false); ("subscribe", `Bool true)])
   in
   let prompts_cap =
     if s.prompts = [] then None
@@ -263,6 +266,39 @@ let handle_prompts_get s ctx id params =
     Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
       ~message:"Invalid prompts/get params" ()
 
+(* ── resources/subscribe + unsubscribe ────────────────── *)
+
+let handle_resources_subscribe s id params =
+  match params with
+  | Some (`Assoc fields) ->
+    begin match List.assoc_opt "uri" fields with
+    | Some (`String uri) ->
+      if not (List.mem uri s.subscribed_uris) then
+        s.subscribed_uris <- uri :: s.subscribed_uris;
+      Jsonrpc.make_response ~id ~result:(`Assoc [])
+    | _ ->
+      Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+        ~message:"Missing 'uri' in resources/subscribe params" ()
+    end
+  | _ ->
+    Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+      ~message:"Invalid resources/subscribe params" ()
+
+let handle_resources_unsubscribe s id params =
+  match params with
+  | Some (`Assoc fields) ->
+    begin match List.assoc_opt "uri" fields with
+    | Some (`String uri) ->
+      s.subscribed_uris <- List.filter (fun u -> u <> uri) s.subscribed_uris;
+      Jsonrpc.make_response ~id ~result:(`Assoc [])
+    | _ ->
+      Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+        ~message:"Missing 'uri' in resources/unsubscribe params" ()
+    end
+  | _ ->
+    Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+      ~message:"Invalid resources/unsubscribe params" ()
+
 (* ── logging/setLevel handler ────────────────────────── *)
 
 let handle_logging_set_level log_level_ref id params =
@@ -342,6 +378,10 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
         handle_resources_list s req.id
       | m when m = Notifications.resources_read ->
         handle_resources_read s ctx req.id req.params
+      | m when m = Notifications.resources_subscribe ->
+        handle_resources_subscribe s req.id req.params
+      | m when m = Notifications.resources_unsubscribe ->
+        handle_resources_unsubscribe s req.id req.params
       | m when m = Notifications.prompts_list ->
         handle_prompts_list s req.id
       | m when m = Notifications.prompts_get ->

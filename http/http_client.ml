@@ -4,7 +4,15 @@ open Mcp_protocol
 
 (* ── types ───────────────────────────────────── *)
 
+type sampling_handler =
+  Sampling.create_message_params -> (Sampling.create_message_result, string) result
+type roots_handler =
+  unit -> (Mcp_types.root list, string) result
+type elicitation_handler =
+  Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result
 type notification_handler = string -> Yojson.Safe.t option -> unit
+
+type timeout_fn = { run : 'a. float -> (unit -> 'a) -> 'a }
 
 type t = {
   endpoint : Uri.t;
@@ -12,23 +20,39 @@ type t = {
   sw : Eio.Switch.t;
   mutable next_id : int;
   mutable session_id : string option;
+  sampling_handler : sampling_handler option;
+  roots_handler : roots_handler option;
+  elicitation_handler : elicitation_handler option;
   notification_handler : notification_handler option;
+  timeout_fn : timeout_fn option;
 }
+
+let default_timeout = 60.0
 
 (* ── construction ────────────────────────────── *)
 
-let create ~endpoint ~net ~sw () =
+let create ~endpoint ~net ~sw ?clock () =
+  let timeout_fn = match clock with
+    | Some c -> Some { run = fun d f -> Eio.Time.with_timeout_exn c d f }
+    | None -> None
+  in
   {
     endpoint = Uri.of_string endpoint;
     client = Cohttp_eio.Client.make ~https:None net;
     sw;
     next_id = 1;
     session_id = None;
+    sampling_handler = None;
+    roots_handler = None;
+    elicitation_handler = None;
     notification_handler = None;
+    timeout_fn;
   }
 
-let on_notification handler t =
-  { t with notification_handler = Some handler }
+let on_sampling handler t = { t with sampling_handler = Some handler }
+let on_roots_list handler t = { t with roots_handler = Some handler }
+let on_elicitation handler t = { t with elicitation_handler = Some handler }
+let on_notification handler t = { t with notification_handler = Some handler }
 
 (* ── HTTP helpers ────────────────────────────── *)
 
@@ -64,9 +88,23 @@ let post_json t body_json =
   in
   (status, body_str)
 
+(* ── notification ────────────────────────────── *)
+
+let send_notification t ~method_ ?params () =
+  let msg = Jsonrpc.make_notification ~method_ ?params () in
+  let json = Jsonrpc.message_to_yojson msg in
+  match post_json t json with
+  | exception exn ->
+    Error (Printf.sprintf "HTTP notification failed: %s"
+      (Printexc.to_string exn))
+  | (`OK, _) | (`Accepted, _) -> Ok ()
+  | (status, body) ->
+    Error (Printf.sprintf "HTTP %d: %s"
+      (Http.Status.to_int status) body)
+
 (* ── request/response ────────────────────────── *)
 
-let send_request t ~method_ ?params () =
+let do_request t ~method_ ?params () =
   if method_ <> Notifications.initialize && t.session_id = None then
     Error "Not initialized: call initialize first"
   else
@@ -92,17 +130,27 @@ let send_request t ~method_ ?params () =
         | Ok (Jsonrpc.Error err) -> Error err.error.message
         | Ok _ -> Error "Unexpected message type in response"
 
-let send_notification t ~method_ ?params () =
-  let msg = Jsonrpc.make_notification ~method_ ?params () in
-  let json = Jsonrpc.message_to_yojson msg in
-  match post_json t json with
-  | exception exn ->
-    Error (Printf.sprintf "HTTP notification failed: %s"
-      (Printexc.to_string exn))
-  | (`OK, _) | (`Accepted, _) -> Ok ()
-  | (status, body) ->
-    Error (Printf.sprintf "HTTP %d: %s"
-      (Http.Status.to_int status) body)
+let send_request t ~method_ ?params ?(timeout = default_timeout) () =
+  match t.timeout_fn with
+  | None -> do_request t ~method_ ?params ()
+  | Some tf ->
+    begin try
+      tf.run timeout (fun () -> do_request t ~method_ ?params ())
+    with Eio.Time.Timeout ->
+      (* Best effort: notify peer we gave up *)
+      let id = Jsonrpc.Int (t.next_id - 1) in
+      (try
+        ignore (send_notification t
+          ~method_:Notifications.cancelled
+          ~params:(`Assoc [
+            ("requestId", Jsonrpc.id_to_yojson id);
+            ("reason", `String "Request timed out")
+          ]) ())
+      with
+      | Out_of_memory | Stack_overflow as exn -> raise exn
+      | _exn -> ());
+      Error (Printf.sprintf "Request timed out after %.1fs" timeout)
+    end
 
 (* ── helpers ─────────────────────────────────── *)
 
@@ -124,9 +172,20 @@ let parse_list_field field_name parser result =
 (* ── lifecycle ───────────────────────────────── *)
 
 let initialize t ~client_name ~client_version =
+  let caps_fields =
+    (match t.sampling_handler with
+     | Some _ -> [("sampling", `Assoc [])]
+     | None -> []) @
+    (match t.roots_handler with
+     | Some _ -> [("roots", `Assoc [("listChanged", `Bool false)])]
+     | None -> []) @
+    (match t.elicitation_handler with
+     | Some _ -> [("elicitation", `Assoc [])]
+     | None -> [])
+  in
   let params = `Assoc [
     ("protocolVersion", `String Version.latest);
-    ("capabilities", `Assoc []);
+    ("capabilities", `Assoc caps_fields);
     ("clientInfo", `Assoc [
       ("name", `String client_name);
       ("version", `String client_version);
@@ -148,8 +207,12 @@ let ping t =
 
 (* ── tools ───────────────────────────────────── *)
 
-let list_tools t =
-  match send_request t ~method_:Notifications.tools_list () with
+let list_tools ?cursor t =
+  let params = match cursor with
+    | Some c -> Some (`Assoc [("cursor", `String c)])
+    | None -> None
+  in
+  match send_request t ~method_:Notifications.tools_list ?params () with
   | Error e -> Error e
   | Ok result -> parse_list_field "tools" Mcp_types.tool_of_yojson result
 
@@ -166,8 +229,12 @@ let call_tool t ~name ?arguments () =
 
 (* ── resources ───────────────────────────────── *)
 
-let list_resources t =
-  match send_request t ~method_:Notifications.resources_list () with
+let list_resources ?cursor t =
+  let params = match cursor with
+    | Some c -> Some (`Assoc [("cursor", `String c)])
+    | None -> None
+  in
+  match send_request t ~method_:Notifications.resources_list ?params () with
   | Error e -> Error e
   | Ok result ->
     parse_list_field "resources" Mcp_types.resource_of_yojson result
@@ -179,10 +246,26 @@ let read_resource t ~uri =
   | Ok result ->
     parse_list_field "contents" Mcp_types.resource_contents_of_yojson result
 
+let subscribe_resource t ~uri =
+  let params = `Assoc [("uri", `String uri)] in
+  match send_request t ~method_:Notifications.resources_subscribe ~params () with
+  | Error e -> Error e
+  | Ok _ -> Ok ()
+
+let unsubscribe_resource t ~uri =
+  let params = `Assoc [("uri", `String uri)] in
+  match send_request t ~method_:Notifications.resources_unsubscribe ~params () with
+  | Error e -> Error e
+  | Ok _ -> Ok ()
+
 (* ── prompts ─────────────────────────────────── *)
 
-let list_prompts t =
-  match send_request t ~method_:Notifications.prompts_list () with
+let list_prompts ?cursor t =
+  let params = match cursor with
+    | Some c -> Some (`Assoc [("cursor", `String c)])
+    | None -> None
+  in
+  match send_request t ~method_:Notifications.prompts_list ?params () with
   | Error e -> Error e
   | Ok result ->
     parse_list_field "prompts" Mcp_types.prompt_of_yojson result

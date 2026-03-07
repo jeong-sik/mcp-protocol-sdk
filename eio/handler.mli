@@ -64,6 +64,9 @@ val tools : t -> Mcp_types.tool list
 val resources : t -> Mcp_types.resource list
 val prompts : t -> Mcp_types.prompt list
 
+(** Return URIs currently subscribed via [resources/subscribe]. *)
+val subscribed_uris : t -> string list
+
 (** {2 Capabilities} *)
 
 val server_capabilities : t -> Mcp_types.server_capabilities

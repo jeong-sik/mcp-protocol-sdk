@@ -35,16 +35,22 @@ let add_completion_handler handler s =
 let json_content_type = "application/json"
 let _sse_content_type = "text/event-stream"
 
+let cors_headers = [
+  ("Access-Control-Allow-Origin", "*");
+  ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  ("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id");
+  ("Access-Control-Expose-Headers", "Mcp-Session-Id");
+]
+
 let respond_json ~status body =
   let json_str = Yojson.Safe.to_string body in
+  let headers = ("Content-Type", json_content_type) :: cors_headers in
   Cohttp_eio.Server.respond_string
-    ~headers:(Http.Header.of_list [
-      ("Content-Type", json_content_type);
-    ])
+    ~headers:(Http.Header.of_list headers)
     ~status ~body:json_str ()
 
 let respond_json_with_session session ~status body =
-  let headers = [("Content-Type", json_content_type)] in
+  let headers = ("Content-Type", json_content_type) :: cors_headers in
   let headers = match Http_session.session_id session with
     | Some sid -> (Http_session.header_name, sid) :: headers
     | None -> headers
@@ -54,7 +60,7 @@ let respond_json_with_session session ~status body =
     ~status ~body:(Yojson.Safe.to_string body) ()
 
 let respond_empty ~status ?(extra_headers=[]) session =
-  let headers = extra_headers in
+  let headers = extra_headers @ cors_headers in
   let headers = match Http_session.session_id session with
     | Some sid -> (Http_session.header_name, sid) :: headers
     | None -> headers
@@ -227,14 +233,7 @@ let handle_delete s request : Cohttp_eio.Server.response =
 (* ── OPTIONS handler ─────────────────────────── *)
 
 let handle_options session : Cohttp_eio.Server.response =
-  respond_empty ~status:`OK
-    ~extra_headers:[
-      ("Access-Control-Allow-Origin", "*");
-      ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-      ("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id");
-      ("Access-Control-Expose-Headers", "Mcp-Session-Id");
-    ]
-    session
+  respond_empty ~status:`OK session
 
 (* ── main callback ───────────────────────────── *)
 
@@ -248,9 +247,15 @@ let callback s ?(prefix="/mcp") _conn request body =
   else
     match meth with
     | `POST ->
-      let body_str = Eio.Buf_read.of_flow ~max_size:(10 * 1024 * 1024) body
-                     |> Eio.Buf_read.take_all in
-      handle_post s request body_str
+      begin match
+        Eio.Buf_read.of_flow ~max_size:(10 * 1024 * 1024) body
+        |> Eio.Buf_read.take_all
+      with
+      | body_str -> handle_post s request body_str
+      | exception Eio.Buf_read.Buffer_limit_exceeded ->
+        respond_json ~status:`Request_entity_too_large
+          (`Assoc ["error", `String "Request body too large (max 10MB)"])
+      end
     | `GET ->
       handle_get s request
     | `DELETE ->

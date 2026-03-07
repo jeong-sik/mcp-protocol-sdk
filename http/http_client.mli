@@ -32,10 +32,32 @@ type t
 (** Create a new HTTP MCP client.
     @param endpoint Full URL to the MCP HTTP endpoint (e.g. "http://host:port/mcp")
     @param net Eio network capability
-    @param sw Eio switch for the client lifetime *)
-val create : endpoint:string -> net:_ Eio.Net.t -> sw:Eio.Switch.t -> unit -> t
+    @param sw Eio switch for the client lifetime
+    @param clock Optional Eio clock for request timeouts.
+      When provided, each request times out after 60 seconds.
+      On timeout a [notifications/cancelled] notification is sent to the server. *)
+val create : endpoint:string -> net:_ Eio.Net.t -> sw:Eio.Switch.t ->
+  ?clock:_ Eio.Time.clock -> unit -> t
 
-(** {2 Callback Registration} *)
+(** {2 Callback Registration}
+
+    Register handlers for server-initiated requests.
+    Registered handlers are advertised as client capabilities during [initialize]. *)
+
+(** Handler for sampling/createMessage requests from the server. *)
+val on_sampling :
+  (Sampling.create_message_params -> (Sampling.create_message_result, string) result) ->
+  t -> t
+
+(** Handler for roots/list requests from the server. *)
+val on_roots_list :
+  (unit -> (Mcp_types.root list, string) result) ->
+  t -> t
+
+(** Handler for elicitation/create requests from the server. *)
+val on_elicitation :
+  (Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result) ->
+  t -> t
 
 (** Register a handler for incoming notifications (via SSE). *)
 val on_notification : (string -> Yojson.Safe.t option -> unit) -> t -> t
@@ -51,21 +73,27 @@ val ping : t -> (unit, string) result
 
 (** {2 Tools} *)
 
-val list_tools : t -> (Mcp_types.tool list, string) result
+val list_tools : ?cursor:string -> t -> (Mcp_types.tool list, string) result
 
 val call_tool : t -> name:string -> ?arguments:Yojson.Safe.t -> unit ->
   (Mcp_types.tool_result, string) result
 
 (** {2 Resources} *)
 
-val list_resources : t -> (Mcp_types.resource list, string) result
+val list_resources : ?cursor:string -> t -> (Mcp_types.resource list, string) result
 
 val read_resource : t -> uri:string ->
   (Mcp_types.resource_contents list, string) result
 
+(** Subscribe to change notifications for a resource URI. *)
+val subscribe_resource : t -> uri:string -> (unit, string) result
+
+(** Unsubscribe from change notifications for a resource URI. *)
+val unsubscribe_resource : t -> uri:string -> (unit, string) result
+
 (** {2 Prompts} *)
 
-val list_prompts : t -> (Mcp_types.prompt list, string) result
+val list_prompts : ?cursor:string -> t -> (Mcp_types.prompt list, string) result
 
 val get_prompt : t -> name:string -> ?arguments:(string * string) list -> unit ->
   (Mcp_types.prompt_result, string) result
