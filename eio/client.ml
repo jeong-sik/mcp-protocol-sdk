@@ -186,9 +186,20 @@ let parse_list_field field_name parser result =
 (* ── initialize ───────────────────────────────────── *)
 
 let initialize t ~client_name ~client_version =
+  let caps_fields =
+    (match t.sampling_handler with
+     | Some _ -> [("sampling", `Assoc [])]
+     | None -> []) @
+    (match t.roots_handler with
+     | Some _ -> [("roots", `Assoc [("listChanged", `Bool false)])]
+     | None -> []) @
+    (match t.elicitation_handler with
+     | Some _ -> [("elicitation", `Assoc [])]
+     | None -> [])
+  in
   let params = `Assoc [
     ("protocolVersion", `String Version.latest);
-    ("capabilities", `Assoc []);
+    ("capabilities", `Assoc caps_fields);
     ("clientInfo", `Assoc [
       ("name", `String client_name);
       ("version", `String client_version);
