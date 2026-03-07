@@ -131,8 +131,8 @@ let message_of_yojson json =
       Result.map (fun e -> Error e) (error_response_of_yojson json)
     | _ ->
       Error "Invalid JSON-RPC message structure"
-  with _ ->
-    Error "Failed to parse JSON-RPC message"
+  with Yojson.Safe.Util.Type_error (msg, _) ->
+    Error (Printf.sprintf "Failed to parse JSON-RPC message: %s" msg)
 
 (** Convert a JSON-RPC message to JSON *)
 let message_to_yojson = function
