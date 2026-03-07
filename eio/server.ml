@@ -473,7 +473,15 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
           ~message:(Printf.sprintf "Unknown method: %s" req.method_) ()
     in
     Some response
-  | Notification _ ->
+  | Notification notif ->
+    if notif.method_ = Notifications.cancelled then
+      Printf.eprintf "[%s] Received cancellation for request%s\n%!" s.name
+        (match notif.params with
+         | Some (`Assoc fields) ->
+           (match List.assoc_opt "requestId" fields with
+            | Some id -> " " ^ Yojson.Safe.to_string id
+            | None -> "")
+         | _ -> "");
     None
   | Response _ | Error _ ->
     None

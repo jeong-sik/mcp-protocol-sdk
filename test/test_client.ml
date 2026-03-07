@@ -673,6 +673,42 @@ let test_client_timeout_eof () =
     Alcotest.(check bool) "has error message" true (String.length msg > 0)
   | Ok () -> Alcotest.fail "Expected error from empty source"
 
+(* ── cancellation tests ───────────────────────────────── *)
+
+let test_client_receives_cancellation () =
+  (* Server sends a cancellation notification for request id 1, then EOF.
+     Client.ping sends a request with id=1 (first request), so the
+     cancellation notification targets that in-flight request. *)
+  let cancel_notification =
+    `Assoc [
+      ("jsonrpc", `String "2.0");
+      ("method", `String "notifications/cancelled");
+      ("params", `Assoc [
+        ("requestId", `Int 1);
+        ("reason", `String "Server busy");
+      ]);
+    ]
+  in
+  let (result, _) = run_client_test [cancel_notification] (fun client ->
+    Mcp_protocol_eio.Client.ping client
+  ) in
+  match result with
+  | Error msg ->
+    let contains ~sub s =
+      let len_sub = String.length sub in
+      let len_s = String.length s in
+      if len_sub > len_s then false
+      else
+        let rec check i =
+          if i > len_s - len_sub then false
+          else if String.sub s i len_sub = sub then true
+          else check (i + 1)
+        in check 0
+    in
+    Alcotest.(check bool) "mentions cancelled or reason" true
+      (contains ~sub:"cancelled" msg || contains ~sub:"Server busy" msg)
+  | Ok _ -> Alcotest.fail "Expected cancellation error"
+
 (* ── test suite ──────────────────────────────────────── *)
 
 let () =
@@ -720,5 +756,8 @@ let () =
     "capabilities", [
       Alcotest.test_case "advertised" `Quick test_capabilities_advertised;
       Alcotest.test_case "empty" `Quick test_capabilities_empty;
+    ];
+    "cancellation", [
+      Alcotest.test_case "receives_cancellation" `Quick test_client_receives_cancellation;
     ];
   ]

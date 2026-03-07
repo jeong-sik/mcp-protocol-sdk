@@ -158,15 +158,51 @@ let read_response t expected_id =
         dispatch_server_request t req;
         loop ()
       | Jsonrpc.Notification notif ->
-        begin match t.notification_handler with
-        | Some handler ->
-          (try handler notif.method_ notif.params
-           with exn ->
-             Printf.eprintf "Client: notification handler raised: %s\n%!"
-               (Printexc.to_string exn))
-        | None -> ()
-        end;
-        loop ()
+        if notif.method_ = Notifications.cancelled then begin
+          (* Check if cancellation targets our in-flight request *)
+          let matches = match notif.params with
+            | Some (`Assoc fields) ->
+              begin match List.assoc_opt "requestId" fields with
+              | Some id_json ->
+                (match Jsonrpc.id_of_yojson id_json with
+                 | Ok id -> id = expected_id
+                 | Error _ -> false)
+              | None -> false
+              end
+            | _ -> false
+          in
+          if matches then
+            let reason = match notif.params with
+              | Some (`Assoc fields) ->
+                (match List.assoc_opt "reason" fields with
+                 | Some (`String r) -> Some r
+                 | _ -> None)
+              | _ -> None
+            in
+            Error (Printf.sprintf "Request cancelled%s"
+              (match reason with Some r -> ": " ^ r | None -> ""))
+          else begin
+            (* Cancellation for a different request; pass to handler and continue *)
+            (match t.notification_handler with
+             | Some handler ->
+               (try handler notif.method_ notif.params
+                with exn ->
+                  Printf.eprintf "Client: notification handler raised: %s\n%!"
+                    (Printexc.to_string exn))
+             | None -> ());
+            loop ()
+          end
+        end else begin
+          (* Normal notification handling *)
+          (match t.notification_handler with
+           | Some handler ->
+             (try handler notif.method_ notif.params
+              with exn ->
+                Printf.eprintf "Client: notification handler raised: %s\n%!"
+                  (Printexc.to_string exn))
+           | None -> ());
+          loop ()
+        end
       | _ ->
         loop ()
       end
