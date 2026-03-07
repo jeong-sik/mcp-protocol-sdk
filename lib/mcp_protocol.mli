@@ -8,6 +8,7 @@
 module Jsonrpc = Jsonrpc
 module Mcp_types = Mcp_types
 module Error_codes = Error_codes
+module Mcp_error = Mcp_error
 module Http_negotiation = Http_negotiation
 module Version = Version
 module Mcp_result = Mcp_result

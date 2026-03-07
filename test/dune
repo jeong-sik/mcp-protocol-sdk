@@ -3,6 +3,7 @@
   test_jsonrpc
   test_mcp_types
   test_error_codes
+  test_mcp_error
   test_version
   test_http_negotiation
   test_session

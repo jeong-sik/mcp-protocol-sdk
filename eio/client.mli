@@ -11,7 +11,7 @@
       let _proc = Eio.Process.spawn ~sw mgr ~stdin:r1 ~stdout:w2 ["server"] in
       Eio.Flow.close r1;
       Eio.Flow.close w2;
-      let client = Client.create ~stdin:r2 ~stdout:w1 in
+      let client = Client.create ~stdin:r2 ~stdout:w1 () in
       match Client.initialize client ~client_name:"test" ~client_version:"1.0" with
       | Ok result -> Printf.printf "Connected to %s\n" result.server_info.name
       | Error e -> Printf.eprintf "Init failed: %s\n" e
@@ -25,12 +25,48 @@ open Mcp_protocol
 type t
 
 (** Create a client connected to the given I/O flows.
-    @param clock  Eio clock used for response timeouts.
-    @param timeout Maximum seconds to wait for a response (default: 30.0).
     @param stdin  Source to read server responses from.
-    @param stdout Sink to write requests to the server. *)
-val create : clock:_ Eio.Time.clock -> ?timeout:float ->
-  stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> unit -> t
+    @param stdout Sink to write requests to the server.
+    @param clock  Optional Eio clock for request timeouts.
+      When provided, each request times out after [default_timeout] seconds
+      (configurable per-request via [?timeout] on [send_request]).
+      On timeout a [notifications/cancelled] notification is sent to the server. *)
+val create : stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink ->
+  ?clock:_ Eio.Time.clock -> unit -> t
+
+(** {2 Callback Registration}
+
+    Register handlers for server-initiated requests.
+    The client automatically dispatches incoming requests
+    during [read_response] and sends responses back. *)
+
+(** Handler for sampling/createMessage requests from the server. *)
+type sampling_handler =
+  Sampling.create_message_params -> (Sampling.create_message_result, string) result
+
+(** Handler for roots/list requests from the server. *)
+type roots_handler =
+  unit -> (Mcp_types.root list, string) result
+
+(** Handler for elicitation/create requests from the server. *)
+type elicitation_handler =
+  Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result
+
+(** Handler for incoming notifications from the server. *)
+type notification_handler =
+  string -> Yojson.Safe.t option -> unit
+
+(** Register a sampling handler. *)
+val on_sampling : sampling_handler -> t -> t
+
+(** Register a roots/list handler. *)
+val on_roots_list : roots_handler -> t -> t
+
+(** Register an elicitation handler. *)
+val on_elicitation : elicitation_handler -> t -> t
+
+(** Register a notification handler. *)
+val on_notification : notification_handler -> t -> t
 
 (** {2 Lifecycle} *)
 

@@ -8,6 +8,9 @@ type context = {
   send_notification : method_:string -> params:Yojson.Safe.t option -> (unit, string) result;
   send_log : Logging.log_level -> string -> (unit, string) result;
   send_progress : token:Mcp_result.progress_token -> progress:float -> total:float option -> (unit, string) result;
+  request_sampling : Sampling.create_message_params -> (Sampling.create_message_result, string) result;
+  request_roots_list : unit -> (Mcp_types.root list, string) result;
+  request_elicitation : Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result;
 }
 
 (* ── handler types ───────────────────────────────────── *)
@@ -44,6 +47,7 @@ type t = {
   (* Runtime state: set during run, used for send_notification *)
   mutable transport_ref: Stdio_transport.t option;
   mutable log_level: Logging.log_level;
+  mutable next_request_id: int;
 }
 
 let create ~name ~version ?instructions () =
@@ -51,7 +55,8 @@ let create ~name ~version ?instructions () =
     tools = []; resources = []; prompts = [];
     completion_handler = None;
     transport_ref = None;
-    log_level = Logging.Warning; }
+    log_level = Logging.Warning;
+    next_request_id = 1; }
 
 let add_tool tool handler s =
   { s with tools = s.tools @ [{ tool; handler }] }
@@ -76,9 +81,53 @@ let send_notification s ~method_ ~params =
   | None -> Error "Server is not running (no transport)"
   | Some transport -> send_notification_via_transport transport ~method_ ~params
 
+(* ── server request sending ──────────────────────────── *)
+
+let default_timeout = 60.0
+
+let server_read_response transport ?clock expected_id =
+  let do_read () =
+    let rec loop () =
+      match Stdio_transport.read transport with
+      | None -> Error "Connection closed while waiting for client response"
+      | Some (Error e) -> Error (Printf.sprintf "Read error: %s" e)
+      | Some (Ok msg) ->
+        begin match msg with
+        | Jsonrpc.Response resp when resp.id = expected_id ->
+          Ok resp.result
+        | Jsonrpc.Error err when err.id = expected_id ->
+          Error err.error.message
+        | Jsonrpc.Notification _ ->
+          (* Skip notifications while waiting for response *)
+          loop ()
+        | Jsonrpc.Response _ | Jsonrpc.Error _ ->
+          (* Response/Error with non-matching ID; skip *)
+          loop ()
+        | Jsonrpc.Request _ ->
+          (* Unexpected inbound request while waiting for response; skip *)
+          loop ()
+        end
+    in
+    loop ()
+  in
+  match clock with
+  | None -> do_read ()
+  | Some c ->
+    try Eio.Time.with_timeout_exn c default_timeout do_read
+    with Eio.Time.Timeout ->
+      Error (Printf.sprintf "Server request timed out after %.1fs" default_timeout)
+
+let server_send_request transport next_id_ref ?clock ~method_ ?params () =
+  let id = Jsonrpc.Int !next_id_ref in
+  next_id_ref := !next_id_ref + 1;
+  let msg = Jsonrpc.make_request ~id ~method_ ?params () in
+  match Stdio_transport.write transport msg with
+  | Error e -> Error e
+  | Ok () -> server_read_response transport ?clock id
+
 (* ── context builder ─────────────────────────────────── *)
 
-let make_context transport log_level_ref =
+let make_context transport log_level_ref next_id_ref ?clock () =
   let send_notification ~method_ ~params =
     send_notification_via_transport transport ~method_ ~params
   in
@@ -102,7 +151,45 @@ let make_context transport log_level_ref =
       ~method_:Notifications.progress
       ~params:(Some (Mcp_result.progress_to_yojson p))
   in
-  { send_notification; send_log; send_progress }
+  let request_sampling params =
+    let json = Sampling.create_message_params_to_yojson params in
+    match server_send_request transport next_id_ref ?clock
+            ~method_:Notifications.sampling_create_message ~params:json () with
+    | Error e -> Error e
+    | Ok result -> Sampling.create_message_result_of_yojson result
+  in
+  let request_roots_list () =
+    match server_send_request transport next_id_ref ?clock
+            ~method_:Notifications.roots_list () with
+    | Error e -> Error e
+    | Ok result ->
+      begin match result with
+      | `Assoc fields ->
+        begin match List.assoc_opt "roots" fields with
+        | Some (`List items) ->
+          let roots = List.fold_left (fun acc j ->
+            match acc with
+            | Error _ -> acc
+            | Ok lst ->
+              match Mcp_types.root_of_yojson j with
+              | Ok r -> Ok (lst @ [r])
+              | Error e -> Error (Printf.sprintf "Failed to parse root: %s" e)
+          ) (Ok []) items in
+          roots
+        | _ -> Error "Missing 'roots' in response"
+        end
+      | _ -> Error "Invalid roots/list response"
+      end
+  in
+  let request_elicitation params =
+    let json = Mcp_types.elicitation_params_to_yojson params in
+    match server_send_request transport next_id_ref ?clock
+            ~method_:Notifications.elicitation_create ~params:json () with
+    | Error e -> Error e
+    | Ok result -> Mcp_types.elicitation_result_of_yojson result
+  in
+  { send_notification; send_log; send_progress;
+    request_sampling; request_roots_list; request_elicitation }
 
 (* ── capabilities ─────────────────────────────────────── *)
 
@@ -386,18 +473,27 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
           ~message:(Printf.sprintf "Unknown method: %s" req.method_) ()
     in
     Some response
-  | Notification _ ->
+  | Notification notif ->
+    if notif.method_ = Notifications.cancelled then
+      Printf.eprintf "[%s] Received cancellation for request%s\n%!" s.name
+        (match notif.params with
+         | Some (`Assoc fields) ->
+           (match List.assoc_opt "requestId" fields with
+            | Some id -> " " ^ Yojson.Safe.to_string id
+            | None -> "")
+         | _ -> "");
     None
   | Response _ | Error _ ->
     None
 
 (* ── main loop ────────────────────────────────────────── *)
 
-let run s ~stdin ~stdout =
-  let transport = Stdio_transport.create ~stdin ~stdout in
+let run s ~stdin ~stdout ?clock () =
+  let transport = Stdio_transport.create ~stdin ~stdout () in
   s.transport_ref <- Some transport;
   let log_level_ref = ref s.log_level in
-  let ctx = make_context transport log_level_ref in
+  let next_id_ref = ref s.next_request_id in
+  let ctx = make_context transport log_level_ref next_id_ref ?clock () in
   let rec loop () =
     match Stdio_transport.read transport with
     | None -> ()
@@ -418,5 +514,6 @@ let run s ~stdin ~stdout =
   Fun.protect (fun () -> loop ())
     ~finally:(fun () ->
       s.log_level <- !log_level_ref;
+      s.next_request_id <- !next_id_ref;
       s.transport_ref <- None;
       Stdio_transport.close transport)

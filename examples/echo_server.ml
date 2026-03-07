@@ -45,3 +45,4 @@ let () =
   Mcp_protocol_eio.Server.run server
     ~stdin:(Eio.Stdenv.stdin env)
     ~stdout:(Eio.Stdenv.stdout env)
+    ()

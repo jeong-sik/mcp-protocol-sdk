@@ -293,6 +293,24 @@ let test_make_error_json () =
   let json = Jsonrpc.make_error_json ~id:(Int 1) ~code:(-32601) ~message:"Not found" () in
   check_jsonrpc_field "error helper jsonrpc" json
 
+(* --- exception narrowing regression --- *)
+
+let test_parse_preserves_exception_info () =
+  (* Verify that the narrowed catch clauses preserve specific error messages
+     instead of the old generic "Failed to parse JSON-RPC message" *)
+  let malformed = `Assoc [
+    ("jsonrpc", `String "2.0");
+    ("id", `Int 1);
+    (* missing both "method" and "result"/"error" — triggers structure error *)
+  ] in
+  match Jsonrpc.message_of_yojson malformed with
+  | Error msg ->
+    (* Should get a specific structural error, not a generic catch-all *)
+    Alcotest.(check bool) "error is specific (not generic catch-all)"
+      true
+      (not (String.equal msg "Failed to parse JSON-RPC message"))
+  | Ok _ -> Alcotest.fail "Expected parse error for malformed message"
+
 (* --- Suite --- *)
 
 let () =
@@ -341,6 +359,9 @@ let () =
       Alcotest.test_case "request" `Quick test_inbound_of_request;
       Alcotest.test_case "notification" `Quick test_inbound_of_notification;
       Alcotest.test_case "reject response" `Quick test_inbound_rejects_response;
+    ];
+    "exception_narrowing", [
+      Alcotest.test_case "preserves exception info" `Quick test_parse_preserves_exception_info;
     ];
     "wire_json_helpers", [
       Alcotest.test_case "request json" `Quick test_make_request_json;

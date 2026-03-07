@@ -7,7 +7,7 @@ let with_transport input_str f =
   let source = Eio.Flow.string_source input_str in
   let buf = Buffer.create 256 in
   let sink = Eio.Flow.buffer_sink buf in
-  let transport = Mcp_protocol_eio.Stdio_transport.create ~stdin:source ~stdout:sink in
+  let transport = Mcp_protocol_eio.Stdio_transport.create ~stdin:source ~stdout:sink () in
   f transport buf
 
 (* ── read tests ────────────────────────────────────────────── *)
@@ -158,7 +158,7 @@ let test_roundtrip_request () =
   let source = Eio.Flow.string_source json_line in
   let buf = Buffer.create 256 in
   let sink = Eio.Flow.buffer_sink buf in
-  let t = Mcp_protocol_eio.Stdio_transport.create ~stdin:source ~stdout:sink in
+  let t = Mcp_protocol_eio.Stdio_transport.create ~stdin:source ~stdout:sink () in
   match Mcp_protocol_eio.Stdio_transport.read t with
   | Some (Ok (Request req)) ->
     Alcotest.(check string) "method preserved" "tools/list" req.method_;
@@ -176,7 +176,7 @@ let test_roundtrip_error () =
   let source = Eio.Flow.string_source json_line in
   let buf = Buffer.create 256 in
   let sink = Eio.Flow.buffer_sink buf in
-  let t = Mcp_protocol_eio.Stdio_transport.create ~stdin:source ~stdout:sink in
+  let t = Mcp_protocol_eio.Stdio_transport.create ~stdin:source ~stdout:sink () in
   match Mcp_protocol_eio.Stdio_transport.read t with
   | Some (Ok (Error _)) -> ()
   | _ -> Alcotest.fail "Round-trip error failed"

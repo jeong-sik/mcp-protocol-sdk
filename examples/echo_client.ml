@@ -21,8 +21,7 @@ let () =
   Eio.Flow.close child_stdin_r;
   Eio.Flow.close child_stdout_w;
   (* Create MCP client *)
-  let clock = Eio.Stdenv.clock env in
-  let client = Mcp_protocol_eio.Client.create ~clock
+  let client = Mcp_protocol_eio.Client.create
     ~stdin:child_stdout_r ~stdout:child_stdin_w ()
   in
   (* Initialize *)

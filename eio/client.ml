@@ -2,59 +2,245 @@
 
 open Mcp_protocol
 
-let default_timeout = 30.0
+type sampling_handler =
+  Sampling.create_message_params -> (Sampling.create_message_result, string) result
+type roots_handler =
+  unit -> (Mcp_types.root list, string) result
+type elicitation_handler =
+  Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result
+type notification_handler =
+  string -> Yojson.Safe.t option -> unit
+
+type timeout_fn = { run : 'a. float -> (unit -> 'a) -> 'a }
 
 type t = {
   transport: Stdio_transport.t;
-  with_timeout: 'a. (unit -> 'a) -> 'a;
-  timeout: float;
   mutable next_id: int;
+  sampling_handler: sampling_handler option;
+  roots_handler: roots_handler option;
+  elicitation_handler: elicitation_handler option;
+  notification_handler: notification_handler option;
+  timeout_fn: timeout_fn option;
 }
 
-let create ~clock ?(timeout = default_timeout) ~stdin ~stdout () = {
-  transport = Stdio_transport.create ~stdin ~stdout;
-  with_timeout = (fun f -> Eio.Time.with_timeout_exn clock timeout f);
-  timeout;
-  next_id = 1;
-}
+let default_timeout = 60.0
+
+let create ~stdin ~stdout ?clock () =
+  let timeout_fn = match clock with
+    | Some c -> Some { run = fun d f -> Eio.Time.with_timeout_exn c d f }
+    | None -> None
+  in
+  {
+    transport = Stdio_transport.create ~stdin ~stdout ();
+    next_id = 1;
+    sampling_handler = None;
+    roots_handler = None;
+    elicitation_handler = None;
+    notification_handler = None;
+    timeout_fn;
+  }
+
+let on_sampling handler t = { t with sampling_handler = Some handler }
+let on_roots_list handler t = { t with roots_handler = Some handler }
+let on_elicitation handler t = { t with elicitation_handler = Some handler }
+let on_notification handler t = { t with notification_handler = Some handler }
+
+(* ── server request dispatch ─────────────────────── *)
+
+let send_response t ~id ~result =
+  let msg = Jsonrpc.make_response ~id ~result in
+  match Stdio_transport.write t.transport msg with
+  | Ok () -> ()
+  | Error e -> Printf.eprintf "Client: failed to send response: %s\n%!" e
+
+let send_error_response t ~id ~code ~message =
+  let msg = Jsonrpc.make_error ~id ~code ~message () in
+  match Stdio_transport.write t.transport msg with
+  | Ok () -> ()
+  | Error e -> Printf.eprintf "Client: failed to send error response: %s\n%!" e
+
+let dispatch_server_request t (req : Jsonrpc.request) =
+  match req.method_ with
+  | m when m = Notifications.sampling_create_message ->
+    begin match t.sampling_handler with
+    | None ->
+      send_error_response t ~id:req.id
+        ~code:Error_codes.method_not_found
+        ~message:"No sampling handler registered"
+    | Some handler ->
+      begin match req.params with
+      | Some json ->
+        begin match Sampling.create_message_params_of_yojson json with
+        | Ok params ->
+          begin match handler params with
+          | Ok result ->
+            send_response t ~id:req.id
+              ~result:(Sampling.create_message_result_to_yojson result)
+          | Error msg ->
+            send_error_response t ~id:req.id
+              ~code:Error_codes.internal_error ~message:msg
+          end
+        | Error msg ->
+          send_error_response t ~id:req.id
+            ~code:Error_codes.invalid_params ~message:msg
+        end
+      | None ->
+        send_error_response t ~id:req.id
+          ~code:Error_codes.invalid_params
+          ~message:"Missing params for sampling/createMessage"
+      end
+    end
+  | m when m = Notifications.roots_list ->
+    begin match t.roots_handler with
+    | None ->
+      send_error_response t ~id:req.id
+        ~code:Error_codes.method_not_found
+        ~message:"No roots handler registered"
+    | Some handler ->
+      begin match handler () with
+      | Ok roots ->
+        let roots_json = List.map Mcp_types.root_to_yojson roots in
+        send_response t ~id:req.id
+          ~result:(`Assoc [("roots", `List roots_json)])
+      | Error msg ->
+        send_error_response t ~id:req.id
+          ~code:Error_codes.internal_error ~message:msg
+      end
+    end
+  | m when m = Notifications.elicitation_create ->
+    begin match t.elicitation_handler with
+    | None ->
+      send_error_response t ~id:req.id
+        ~code:Error_codes.method_not_found
+        ~message:"No elicitation handler registered"
+    | Some handler ->
+      begin match req.params with
+      | Some json ->
+        begin match Mcp_types.elicitation_params_of_yojson json with
+        | Ok params ->
+          begin match handler params with
+          | Ok result ->
+            send_response t ~id:req.id
+              ~result:(Mcp_types.elicitation_result_to_yojson result)
+          | Error msg ->
+            send_error_response t ~id:req.id
+              ~code:Error_codes.internal_error ~message:msg
+          end
+        | Error msg ->
+          send_error_response t ~id:req.id
+            ~code:Error_codes.invalid_params ~message:msg
+        end
+      | None ->
+        send_error_response t ~id:req.id
+          ~code:Error_codes.invalid_params
+          ~message:"Missing params for elicitation/create"
+      end
+    end
+  | _ ->
+    send_error_response t ~id:req.id
+      ~code:Error_codes.method_not_found
+      ~message:(Printf.sprintf "Unknown server request: %s" req.method_)
 
 (* ── request/response ─────────────────────────────── *)
 
 let read_response t expected_id =
-  let read_loop () =
-    let rec loop () =
-      match Stdio_transport.read t.transport with
-      | None -> Error "Connection closed"
-      | Some (Error e) -> Error (Printf.sprintf "Read error: %s" e)
-      | Some (Ok msg) ->
-        begin match msg with
-        | Jsonrpc.Response resp when resp.id = expected_id ->
-          Ok resp.result
-        | Jsonrpc.Error err when err.id = expected_id ->
-          Error err.error.message
-        | Jsonrpc.Notification _ ->
-          loop ()
-        | _ ->
+  let rec loop () =
+    match Stdio_transport.read t.transport with
+    | None -> Error "Connection closed"
+    | Some (Error e) -> Error (Printf.sprintf "Read error: %s" e)
+    | Some (Ok msg) ->
+      begin match msg with
+      | Jsonrpc.Response resp when resp.id = expected_id ->
+        Ok resp.result
+      | Jsonrpc.Error err when err.id = expected_id ->
+        Error err.error.message
+      | Jsonrpc.Request req ->
+        dispatch_server_request t req;
+        loop ()
+      | Jsonrpc.Notification notif ->
+        if notif.method_ = Notifications.cancelled then begin
+          (* Check if cancellation targets our in-flight request *)
+          let matches = match notif.params with
+            | Some (`Assoc fields) ->
+              begin match List.assoc_opt "requestId" fields with
+              | Some id_json ->
+                (match Jsonrpc.id_of_yojson id_json with
+                 | Ok id -> id = expected_id
+                 | Error _ -> false)
+              | None -> false
+              end
+            | _ -> false
+          in
+          if matches then
+            let reason = match notif.params with
+              | Some (`Assoc fields) ->
+                (match List.assoc_opt "reason" fields with
+                 | Some (`String r) -> Some r
+                 | _ -> None)
+              | _ -> None
+            in
+            Error (Printf.sprintf "Request cancelled%s"
+              (match reason with Some r -> ": " ^ r | None -> ""))
+          else begin
+            (* Cancellation for a different request; pass to handler and continue *)
+            (match t.notification_handler with
+             | Some handler ->
+               (try handler notif.method_ notif.params
+                with
+                | Out_of_memory | Stack_overflow as exn -> raise exn
+                | exn ->
+                  Printf.eprintf "Client: notification handler raised: %s\n%!"
+                    (Printexc.to_string exn))
+             | None -> ());
+            loop ()
+          end
+        end else begin
+          (* Normal notification handling *)
+          (match t.notification_handler with
+           | Some handler ->
+             (try handler notif.method_ notif.params
+              with exn ->
+                Printf.eprintf "Client: notification handler raised: %s\n%!"
+                  (Printexc.to_string exn))
+           | None -> ());
           loop ()
         end
-    in
-    loop ()
+      | _ ->
+        loop ()
+      end
   in
-  try t.with_timeout read_loop
-  with Eio.Time.Timeout ->
-    Error (Printf.sprintf "Response timed out after %.0fs" t.timeout)
+  loop ()
 
-let send_request t ~method_ ?params () =
+let send_notification t ~method_ ?params () =
+  let msg = Jsonrpc.make_notification ~method_ ?params () in
+  Stdio_transport.write t.transport msg
+
+let send_request t ~method_ ?params ?(timeout = default_timeout) () =
   let id = Jsonrpc.Int t.next_id in
   t.next_id <- t.next_id + 1;
   let msg = Jsonrpc.make_request ~id ~method_ ?params () in
   match Stdio_transport.write t.transport msg with
   | Error e -> Error e
-  | Ok () -> read_response t id
-
-let send_notification t ~method_ ?params () =
-  let msg = Jsonrpc.make_notification ~method_ ?params () in
-  Stdio_transport.write t.transport msg
+  | Ok () ->
+    match t.timeout_fn with
+    | None -> read_response t id
+    | Some tf ->
+      begin try
+        tf.run timeout (fun () -> read_response t id)
+      with Eio.Time.Timeout ->
+        (* Best effort: notify peer we gave up — guard against transport errors *)
+        (try
+          ignore (send_notification t
+            ~method_:Notifications.cancelled
+            ~params:(`Assoc [
+              ("requestId", Jsonrpc.id_to_yojson id);
+              ("reason", `String "Request timed out")
+            ]) ())
+        with
+        | Out_of_memory | Stack_overflow as exn -> raise exn
+        | _exn -> ());
+        Error (Printf.sprintf "Request timed out after %.1fs" timeout)
+      end
 
 (* ── helpers ──────────────────────────────────────── *)
 
@@ -63,21 +249,11 @@ let parse_list_field field_name parser result =
   | `Assoc fields ->
     begin match List.assoc_opt field_name fields with
     | Some (`List items) ->
-      let total = List.length items in
       let parsed = List.filter_map (fun j ->
         match parser j with
         | Ok v -> Some v
-        | Error e ->
-          Printf.eprintf
-            "[mcp-client] warning: dropped unparseable '%s' item: %s\n%!"
-            field_name e;
-          None
+        | Error _ -> None
       ) items in
-      let parsed_count = List.length parsed in
-      if parsed_count < total then
-        Printf.eprintf
-          "[mcp-client] warning: parsed %d/%d '%s' items (%d dropped)\n%!"
-          parsed_count total field_name (total - parsed_count);
       Ok parsed
     | _ -> Error (Printf.sprintf "Missing '%s' array in response" field_name)
     end
@@ -86,9 +262,20 @@ let parse_list_field field_name parser result =
 (* ── initialize ───────────────────────────────────── *)
 
 let initialize t ~client_name ~client_version =
+  let caps_fields =
+    (match t.sampling_handler with
+     | Some _ -> [("sampling", `Assoc [])]
+     | None -> []) @
+    (match t.roots_handler with
+     | Some _ -> [("roots", `Assoc [("listChanged", `Bool false)])]
+     | None -> []) @
+    (match t.elicitation_handler with
+     | Some _ -> [("elicitation", `Assoc [])]
+     | None -> [])
+  in
   let params = `Assoc [
     ("protocolVersion", `String Version.latest);
-    ("capabilities", `Assoc []);
+    ("capabilities", `Assoc caps_fields);
     ("clientInfo", `Assoc [
       ("name", `String client_name);
       ("version", `String client_version);

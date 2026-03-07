@@ -31,6 +31,15 @@ type context = {
       is at or above the current log level set by the client. *)
   send_progress : token:Mcp_result.progress_token -> progress:float -> total:float option -> (unit, string) result;
   (** Send a progress notification for a long-running operation. *)
+  request_sampling : Sampling.create_message_params -> (Sampling.create_message_result, string) result;
+  (** Send a [sampling/createMessage] request to the client and wait for the response.
+      Returns [Ok result] on success or [Error reason] on failure. *)
+  request_roots_list : unit -> (Mcp_types.root list, string) result;
+  (** Send a [roots/list] request to the client and wait for the response.
+      Returns [Ok roots] on success or [Error reason] on failure. *)
+  request_elicitation : Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result;
+  (** Send an [elicitation/create] request to the client and wait for the response.
+      Returns [Ok result] on success or [Error reason] on failure. *)
 }
 
 (** {2 Handler Types} *)
@@ -85,4 +94,4 @@ val send_notification : t -> method_:string -> params:Yojson.Safe.t option -> (u
     - Graceful shutdown on EOF or shutdown request.
 
     Returns when the transport reaches EOF or is closed. *)
-val run : t -> stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> unit
+val run : t -> stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> ?clock:_ Eio.Time.clock -> unit -> unit
