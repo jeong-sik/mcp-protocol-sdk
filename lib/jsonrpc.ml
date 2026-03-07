@@ -36,6 +36,16 @@ type request = {
 }
 [@@deriving yojson]
 
+let request_to_yojson (req : request) =
+  let fields = [
+    ("jsonrpc", `String req.jsonrpc);
+    ("id", id_to_yojson req.id);
+    ("method", `String req.method_);
+  ] in
+  match req.params with
+  | Some params -> `Assoc (fields @ [("params", params)])
+  | None -> `Assoc fields
+
 (** JSON-RPC Notification - no response expected *)
 type notification = {
   jsonrpc: string; [@default "2.0"]
@@ -43,6 +53,15 @@ type notification = {
   params: Yojson.Safe.t option; [@default None]
 }
 [@@deriving yojson]
+
+let notification_to_yojson (notification : notification) =
+  let fields = [
+    ("jsonrpc", `String notification.jsonrpc);
+    ("method", `String notification.method_);
+  ] in
+  match notification.params with
+  | Some params -> `Assoc (fields @ [("params", params)])
+  | None -> `Assoc fields
 
 (** Error data in JSON-RPC error response *)
 type error_data = {
@@ -60,6 +79,13 @@ type response = {
 }
 [@@deriving yojson]
 
+let response_to_yojson (response : response) =
+  `Assoc [
+    ("jsonrpc", `String response.jsonrpc);
+    ("id", id_to_yojson response.id);
+    ("result", response.result);
+  ]
+
 (** JSON-RPC error response *)
 type error_response = {
   jsonrpc: string; [@default "2.0"]
@@ -67,6 +93,13 @@ type error_response = {
   error: error_data;
 }
 [@@deriving yojson]
+
+let error_response_to_yojson (response : error_response) =
+  `Assoc [
+    ("jsonrpc", `String response.jsonrpc);
+    ("id", id_to_yojson response.id);
+    ("error", error_data_to_yojson response.error);
+  ]
 
 (** Union type for all JSON-RPC messages *)
 type message =
@@ -108,6 +141,29 @@ let message_to_yojson = function
   | Response r -> response_to_yojson r
   | Error e -> error_response_to_yojson e
 
+type inbound = {
+  jsonrpc: string;
+  id: id option;
+  method_: string;
+  params: Yojson.Safe.t option;
+}
+
+let inbound_of_yojson json =
+  match message_of_yojson json with
+  | Ok (Request req) ->
+      Ok { jsonrpc = req.jsonrpc; id = Some req.id; method_ = req.method_; params = req.params }
+  | Ok (Notification notification) ->
+      Ok {
+        jsonrpc = notification.jsonrpc;
+        id = None;
+        method_ = notification.method_;
+        params = notification.params;
+      }
+  | Ok (Response _) | Ok (Error _) ->
+      Error "Expected JSON-RPC request or notification"
+  | Error msg ->
+      Error msg
+
 (** Create a request message *)
 let make_request ~id ~method_ ?params () =
   Request { jsonrpc = "2.0"; id; method_; params }
@@ -126,6 +182,22 @@ let make_error ~id ~code ~message ?data () =
     jsonrpc = "2.0";
     id;
     error = { code; message; data }
+  }
+
+let make_request_json ~id ~method_ ?params () =
+  request_to_yojson { jsonrpc = "2.0"; id; method_; params }
+
+let make_notification_json ~method_ ?params () =
+  notification_to_yojson { jsonrpc = "2.0"; method_; params }
+
+let make_response_json ~id ~result =
+  response_to_yojson { jsonrpc = "2.0"; id; result }
+
+let make_error_json ~id ~code ~message ?data () =
+  error_response_to_yojson {
+    jsonrpc = "2.0";
+    id;
+    error = { code; message; data };
   }
 
 (** {2 Request ID} *)
@@ -152,3 +224,9 @@ let message_of_string s =
   | json -> message_of_yojson json
   | exception Yojson.Json_error msg ->
     Error (Printf.sprintf "JSON parse error: %s" msg)
+
+let inbound_of_string s =
+  match Yojson.Safe.from_string s with
+  | json -> inbound_of_yojson json
+  | exception Yojson.Json_error msg ->
+      Error (Printf.sprintf "JSON parse error: %s" msg)

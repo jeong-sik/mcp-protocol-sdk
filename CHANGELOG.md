@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `Jsonrpc.inbound` plus `inbound_of_yojson` / `inbound_of_string` for adapters that normalize requests and notifications through one server-facing shape.
+- `Jsonrpc.make_*_json` helpers for emitting wire JSON directly without an extra `message_to_yojson` conversion step.
+
+### Fixed
+- `Jsonrpc` serializers now always include the required `"jsonrpc": "2.0"` field for requests, notifications, responses, and errors.
+
 ## [0.6.0] - 2026-03-07
 
 ### Added
