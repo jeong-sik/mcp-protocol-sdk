@@ -2,4 +2,4 @@
  (name mcp_protocol_http)
  (public_name mcp_protocol_http)
  (libraries mcp_protocol mcp_protocol_eio eio eio.unix yojson cohttp-eio)
- (modules sse http_session http_server))
+ (modules sse http_session http_server http_client))
