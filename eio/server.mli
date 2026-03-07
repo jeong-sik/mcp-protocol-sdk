@@ -94,4 +94,4 @@ val send_notification : t -> method_:string -> params:Yojson.Safe.t option -> (u
     - Graceful shutdown on EOF or shutdown request.
 
     Returns when the transport reaches EOF or is closed. *)
-val run : t -> stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> unit
+val run : t -> stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> ?clock:_ Eio.Time.clock -> unit -> unit

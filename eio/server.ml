@@ -83,41 +83,51 @@ let send_notification s ~method_ ~params =
 
 (* ── server request sending ──────────────────────────── *)
 
-let server_read_response transport expected_id =
-  let rec loop () =
-    match Stdio_transport.read transport with
-    | None -> Error "Connection closed while waiting for client response"
-    | Some (Error e) -> Error (Printf.sprintf "Read error: %s" e)
-    | Some (Ok msg) ->
-      begin match msg with
-      | Jsonrpc.Response resp when resp.id = expected_id ->
-        Ok resp.result
-      | Jsonrpc.Error err when err.id = expected_id ->
-        Error err.error.message
-      | Jsonrpc.Notification _ ->
-        (* Skip notifications while waiting for response *)
-        loop ()
-      | Jsonrpc.Response _ | Jsonrpc.Error _ ->
-        (* Response/Error with non-matching ID; skip *)
-        loop ()
-      | Jsonrpc.Request _ ->
-        (* Unexpected inbound request while waiting for response; skip *)
-        loop ()
-      end
-  in
-  loop ()
+let default_timeout = 60.0
 
-let server_send_request transport next_id_ref ~method_ ?params () =
+let server_read_response transport ?clock expected_id =
+  let do_read () =
+    let rec loop () =
+      match Stdio_transport.read transport with
+      | None -> Error "Connection closed while waiting for client response"
+      | Some (Error e) -> Error (Printf.sprintf "Read error: %s" e)
+      | Some (Ok msg) ->
+        begin match msg with
+        | Jsonrpc.Response resp when resp.id = expected_id ->
+          Ok resp.result
+        | Jsonrpc.Error err when err.id = expected_id ->
+          Error err.error.message
+        | Jsonrpc.Notification _ ->
+          (* Skip notifications while waiting for response *)
+          loop ()
+        | Jsonrpc.Response _ | Jsonrpc.Error _ ->
+          (* Response/Error with non-matching ID; skip *)
+          loop ()
+        | Jsonrpc.Request _ ->
+          (* Unexpected inbound request while waiting for response; skip *)
+          loop ()
+        end
+    in
+    loop ()
+  in
+  match clock with
+  | None -> do_read ()
+  | Some c ->
+    try Eio.Time.with_timeout_exn c default_timeout do_read
+    with Eio.Time.Timeout ->
+      Error (Printf.sprintf "Server request timed out after %.1fs" default_timeout)
+
+let server_send_request transport next_id_ref ?clock ~method_ ?params () =
   let id = Jsonrpc.Int !next_id_ref in
   next_id_ref := !next_id_ref + 1;
   let msg = Jsonrpc.make_request ~id ~method_ ?params () in
   match Stdio_transport.write transport msg with
   | Error e -> Error e
-  | Ok () -> server_read_response transport id
+  | Ok () -> server_read_response transport ?clock id
 
 (* ── context builder ─────────────────────────────────── *)
 
-let make_context transport log_level_ref next_id_ref =
+let make_context transport log_level_ref next_id_ref ?clock () =
   let send_notification ~method_ ~params =
     send_notification_via_transport transport ~method_ ~params
   in
@@ -143,13 +153,13 @@ let make_context transport log_level_ref next_id_ref =
   in
   let request_sampling params =
     let json = Sampling.create_message_params_to_yojson params in
-    match server_send_request transport next_id_ref
+    match server_send_request transport next_id_ref ?clock
             ~method_:Notifications.sampling_create_message ~params:json () with
     | Error e -> Error e
     | Ok result -> Sampling.create_message_result_of_yojson result
   in
   let request_roots_list () =
-    match server_send_request transport next_id_ref
+    match server_send_request transport next_id_ref ?clock
             ~method_:Notifications.roots_list () with
     | Error e -> Error e
     | Ok result ->
@@ -173,7 +183,7 @@ let make_context transport log_level_ref next_id_ref =
   in
   let request_elicitation params =
     let json = Mcp_types.elicitation_params_to_yojson params in
-    match server_send_request transport next_id_ref
+    match server_send_request transport next_id_ref ?clock
             ~method_:Notifications.elicitation_create ~params:json () with
     | Error e -> Error e
     | Ok result -> Mcp_types.elicitation_result_of_yojson result
@@ -470,12 +480,12 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
 
 (* ── main loop ────────────────────────────────────────── *)
 
-let run s ~stdin ~stdout =
+let run s ~stdin ~stdout ?clock () =
   let transport = Stdio_transport.create ~stdin ~stdout () in
   s.transport_ref <- Some transport;
   let log_level_ref = ref s.log_level in
   let next_id_ref = ref s.next_request_id in
-  let ctx = make_context transport log_level_ref next_id_ref in
+  let ctx = make_context transport log_level_ref next_id_ref ?clock () in
   let rec loop () =
     match Stdio_transport.read transport with
     | None -> ()

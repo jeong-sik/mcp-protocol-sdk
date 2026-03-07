@@ -11,7 +11,7 @@ let run_server_with server input_lines =
   let source = Eio.Flow.string_source input_str in
   let buf = Buffer.create 1024 in
   let sink = Eio.Flow.buffer_sink buf in
-  Mcp_protocol_eio.Server.run server ~stdin:source ~stdout:sink;
+  Mcp_protocol_eio.Server.run server ~stdin:source ~stdout:sink ();
   let output = Buffer.contents buf in
   String.split_on_char '\n' output
   |> List.filter (fun s -> String.length (String.trim s) > 0)
