@@ -3,3 +3,9 @@
  (public_name mcp_echo_server)
  (package mcp_protocol_eio)
  (libraries mcp_protocol mcp_protocol_eio eio_main yojson))
+
+(executable
+ (name echo_client)
+ (public_name mcp_echo_client)
+ (package mcp_protocol_eio)
+ (libraries mcp_protocol mcp_protocol_eio eio_main eio.unix yojson))
