@@ -97,8 +97,11 @@ let server_read_response transport expected_id =
       | Jsonrpc.Notification _ ->
         (* Skip notifications while waiting for response *)
         loop ()
-      | _ ->
-        (* Skip unrelated messages *)
+      | Jsonrpc.Response _ | Jsonrpc.Error _ ->
+        (* Response/Error with non-matching ID; skip *)
+        loop ()
+      | Jsonrpc.Request _ ->
+        (* Unexpected inbound request while waiting for response; skip *)
         loop ()
       end
   in
@@ -154,10 +157,15 @@ let make_context transport log_level_ref next_id_ref =
       | `Assoc fields ->
         begin match List.assoc_opt "roots" fields with
         | Some (`List items) ->
-          let roots = List.filter_map (fun j ->
-            match Mcp_types.root_of_yojson j with Ok r -> Some r | Error _ -> None
-          ) items in
-          Ok roots
+          let roots = List.fold_left (fun acc j ->
+            match acc with
+            | Error _ -> acc
+            | Ok lst ->
+              match Mcp_types.root_of_yojson j with
+              | Ok r -> Ok (lst @ [r])
+              | Error e -> Error (Printf.sprintf "Failed to parse root: %s" e)
+          ) (Ok []) items in
+          roots
         | _ -> Error "Missing 'roots' in response"
         end
       | _ -> Error "Invalid roots/list response"

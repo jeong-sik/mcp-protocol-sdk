@@ -38,11 +38,15 @@ let on_notification handler t = { t with notification_handler = Some handler }
 
 let send_response t ~id ~result =
   let msg = Jsonrpc.make_response ~id ~result in
-  ignore (Stdio_transport.write t.transport msg)
+  match Stdio_transport.write t.transport msg with
+  | Ok () -> ()
+  | Error e -> Printf.eprintf "Client: failed to send response: %s\n%!" e
 
 let send_error_response t ~id ~code ~message =
   let msg = Jsonrpc.make_error ~id ~code ~message () in
-  ignore (Stdio_transport.write t.transport msg)
+  match Stdio_transport.write t.transport msg with
+  | Ok () -> ()
+  | Error e -> Printf.eprintf "Client: failed to send error response: %s\n%!" e
 
 let dispatch_server_request t (req : Jsonrpc.request) =
   match req.method_ with
@@ -144,7 +148,11 @@ let read_response t expected_id =
         loop ()
       | Jsonrpc.Notification notif ->
         begin match t.notification_handler with
-        | Some handler -> handler notif.method_ notif.params
+        | Some handler ->
+          (try handler notif.method_ notif.params
+           with exn ->
+             Printf.eprintf "Client: notification handler raised: %s\n%!"
+               (Printexc.to_string exn))
         | None -> ()
         end;
         loop ()
