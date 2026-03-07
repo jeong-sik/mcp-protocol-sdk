@@ -37,12 +37,15 @@ let rec read t =
 
 let write t msg =
   if t.closed then Error "Transport is closed"
-  else begin
-    let json = Mcp_protocol.Jsonrpc.message_to_yojson msg in
-    let line = Yojson.Safe.to_string json ^ "\n" in
-    Eio.Flow.copy_string line t.sink;
-    Ok ()
-  end
+  else
+    try
+      let json = Mcp_protocol.Jsonrpc.message_to_yojson msg in
+      let line = Yojson.Safe.to_string json ^ "\n" in
+      Eio.Flow.copy_string line t.sink;
+      Ok ()
+    with Eio.Io _ as ex ->
+      t.closed <- true;
+      Error (Printf.sprintf "Transport write error: %s" (Printexc.to_string ex))
 
 let close t =
   t.closed <- true
