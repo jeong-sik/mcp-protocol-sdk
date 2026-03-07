@@ -50,7 +50,7 @@ let make_server () =
     Creates two pipes, runs server in one fiber and client callback in another.
     Closes client-to-server pipe when done to trigger server EOF. *)
 let run_integration fn =
-  Eio_main.run @@ fun _env ->
+  Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   (* Pipe A: client → server *)
   let c2s_r, c2s_w = Eio_unix.pipe sw in
@@ -58,11 +58,12 @@ let run_integration fn =
   let s2c_r, s2c_w = Eio_unix.pipe sw in
   let server = make_server () in
   let result = ref (Error "test did not run") in
+  let clock = Eio.Stdenv.clock env in
   Eio.Fiber.both
     (fun () ->
       Mcp_protocol_eio.Server.run server ~stdin:c2s_r ~stdout:s2c_w)
     (fun () ->
-      let client = Mcp_protocol_eio.Client.create ~stdin:s2c_r ~stdout:c2s_w in
+      let client = Mcp_protocol_eio.Client.create ~clock ~stdin:s2c_r ~stdout:c2s_w () in
       result := fn client;
       Mcp_protocol_eio.Client.close client;
       (* Close write end so server sees EOF *)
