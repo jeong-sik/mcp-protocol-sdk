@@ -4,7 +4,7 @@ open Mcp_protocol
 
 (* ── test helpers ─────────────────────────────────────── *)
 
-(** Send JSON lines to a server, collect all response lines. *)
+(** Send JSON lines to a server, collect all output lines (responses + notifications). *)
 let run_server_with server input_lines =
   Eio_main.run @@ fun _env ->
   let input_str = String.concat "\n" input_lines ^ "\n" in
@@ -40,6 +40,12 @@ let assert_has_error json =
   | Some _ -> ()
   | None -> Alcotest.fail (Printf.sprintf "Expected error in: %s" (Yojson.Safe.to_string json))
 
+(** Partition output lines into responses (has "id") and notifications (has "method", no "id"). *)
+let partition_output lines =
+  List.partition (fun json ->
+    get_field "id" json <> None
+  ) lines
+
 (* ── echo tool setup ──────────────────────────────────── *)
 
 let echo_tool =
@@ -55,7 +61,7 @@ let echo_tool =
     ])
     ()
 
-let echo_handler _name arguments =
+let echo_handler _ctx _name arguments =
   let text = match arguments with
     | Some (`Assoc args) ->
       begin match List.assoc_opt "text" args with
@@ -66,11 +72,19 @@ let echo_handler _name arguments =
   in
   Ok (Mcp_types.tool_result_of_text (Printf.sprintf "Echo: %s" text))
 
-let fail_handler _name _arguments =
+let fail_handler _ctx _name _arguments =
   Error "Something went wrong"
 
 let fail_tool =
   Mcp_types.make_tool ~name:"fail" ~description:"Always fails" ()
+
+(* Tool handler that uses context to send a log *)
+let logging_tool =
+  Mcp_types.make_tool ~name:"log-test" ~description:"Tests logging" ()
+
+let logging_tool_handler (ctx : Mcp_protocol_eio.Server.context) _name _arguments =
+  let _ = ctx.send_log Logging.Info "Tool executed" in
+  Ok (Mcp_types.tool_result_of_text "logged")
 
 (* ── resource setup ───────────────────────────────────── *)
 
@@ -82,7 +96,7 @@ let test_resource =
     ~mime_type:"text/plain"
     ()
 
-let resource_handler _uri =
+let resource_handler _ctx _uri =
   Ok [Mcp_types.{ uri = "file:///test.txt"; mime_type = Some "text/plain";
                    text = Some "Hello from resource"; blob = None }]
 
@@ -95,7 +109,7 @@ let greeting_prompt =
     ~arguments:[Mcp_types.{ name = "name"; description = Some "Who to greet"; required = Some true }]
     ()
 
-let prompt_handler _name args =
+let prompt_handler _ctx _name args =
   let who = match List.assoc_opt "name" args with
     | Some n -> n
     | None -> "world"
@@ -108,6 +122,18 @@ let prompt_handler _name args =
     }];
   }
 
+(* ── completion setup ─────────────────────────────────── *)
+
+let test_completion_handler ref_ arg_name _arg_value =
+  match ref_ with
+  | Mcp_types.Prompt_ref { name } ->
+    if name = "greeting" && arg_name = "name" then
+      Mcp_types.make_completion_result ~values:["Vincent"; "Victor"; "Vivian"] ()
+    else
+      Mcp_types.make_completion_result ~values:[] ()
+  | Mcp_types.Resource_ref _ ->
+    Mcp_types.make_completion_result ~values:[] ()
+
 (* ── server builders ──────────────────────────────────── *)
 
 let basic_server () =
@@ -119,6 +145,14 @@ let full_server () =
   basic_server ()
   |> Mcp_protocol_eio.Server.add_resource test_resource resource_handler
   |> Mcp_protocol_eio.Server.add_prompt greeting_prompt prompt_handler
+
+let logging_server () =
+  Mcp_protocol_eio.Server.create ~name:"log-server" ~version:"1.0.0" ()
+  |> Mcp_protocol_eio.Server.add_tool logging_tool logging_tool_handler
+
+let completion_server () =
+  full_server ()
+  |> Mcp_protocol_eio.Server.add_completion_handler test_completion_handler
 
 (* ── initialize tests ─────────────────────────────────── *)
 
@@ -166,6 +200,21 @@ let test_initialize_capabilities_reflect_tools () =
         (get_field "tools" caps <> None);
       Alcotest.(check bool) "no resources" true
         (get_field "resources" caps = None)
+    | None -> Alcotest.fail "Missing capabilities"
+    end
+  | None -> Alcotest.fail "Expected result"
+
+let test_initialize_has_logging_cap () =
+  let responses = run_server_with (basic_server ())
+    [{|{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}|}]
+  in
+  let json = List.hd responses in
+  match get_result json with
+  | Some result ->
+    begin match get_field "capabilities" result with
+    | Some caps ->
+      Alcotest.(check bool) "has logging" true
+        (get_field "logging" caps <> None)
     | None -> Alcotest.fail "Missing capabilities"
     end
   | None -> Alcotest.fail "Expected result"
@@ -305,7 +354,6 @@ let test_prompts_get () =
   | Some result ->
     begin match get_field "messages" result with
     | Some (`List (first :: _)) ->
-      (* content is a ppx_deriving_yojson variant: ["PromptText", {"type_":"text","text":"..."}] *)
       begin match get_field "content" first with
       | Some (`List [_tag; payload]) ->
         begin match get_string "text" payload with
@@ -356,8 +404,6 @@ let test_multi_message_sequence () =
     {|{"jsonrpc":"2.0","id":3,"method":"tools/list"}|};
     {|{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"echo","arguments":{"text":"world"}}}|};
   ] in
-  (* 4 responses: initialize, ping, tools/list, tools/call *)
-  (* notification produces no response *)
   Alcotest.(check int) "four responses" 4 (List.length responses)
 
 (* ── empty server tests ───────────────────────────────── *)
@@ -379,6 +425,80 @@ let test_empty_server_no_tools_cap () =
     end
   | None -> Alcotest.fail "Expected result"
 
+(* ── logging/setLevel tests ──────────────────────────── *)
+
+let test_logging_set_level () =
+  let responses = run_server_with (basic_server ())
+    [{|{"jsonrpc":"2.0","id":1,"method":"logging/setLevel","params":{"level":"debug"}}|}]
+  in
+  Alcotest.(check int) "one response" 1 (List.length responses);
+  assert_has_result (List.hd responses)
+
+let test_logging_set_level_invalid () =
+  let responses = run_server_with (basic_server ())
+    [{|{"jsonrpc":"2.0","id":1,"method":"logging/setLevel","params":{"level":"bogus"}}|}]
+  in
+  assert_has_error (List.hd responses)
+
+let test_logging_set_level_missing_params () =
+  let responses = run_server_with (basic_server ())
+    [{|{"jsonrpc":"2.0","id":1,"method":"logging/setLevel"}|}]
+  in
+  assert_has_error (List.hd responses)
+
+let test_logging_notification_sent () =
+  let all_output = run_server_with (logging_server ()) [
+    {|{"jsonrpc":"2.0","id":1,"method":"logging/setLevel","params":{"level":"debug"}}|};
+    {|{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"log-test","arguments":{}}}|};
+  ] in
+  let responses, notifications = partition_output all_output in
+  Alcotest.(check int) "two responses" 2 (List.length responses);
+  Alcotest.(check bool) "has notification" true (List.length notifications > 0);
+  let notif = List.hd notifications in
+  Alcotest.(check (option string)) "notification method"
+    (Some "notifications/message") (get_string "method" notif)
+
+let test_logging_notification_filtered () =
+  (* Default log level is Warning; Info log should be filtered *)
+  let all_output = run_server_with (logging_server ()) [
+    {|{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"log-test","arguments":{}}}|};
+  ] in
+  let _responses, notifications = partition_output all_output in
+  Alcotest.(check int) "no notification (filtered)" 0 (List.length notifications)
+
+(* ── completion/complete tests ───────────────────────── *)
+
+let test_completion_complete () =
+  let responses = run_server_with (completion_server ())
+    [{|{"jsonrpc":"2.0","id":1,"method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"greeting"},"argument":{"name":"name","value":"Vi"}}}|}]
+  in
+  let json = List.hd responses in
+  assert_has_result json;
+  match get_result json with
+  | Some result ->
+    begin match get_field "completion" result with
+    | Some completion ->
+      begin match get_field "values" completion with
+      | Some (`List values) ->
+        Alcotest.(check int) "three values" 3 (List.length values)
+      | _ -> Alcotest.fail "Missing values array"
+      end
+    | None -> Alcotest.fail "Missing completion field"
+    end
+  | None -> Alcotest.fail "Expected result"
+
+let test_completion_no_handler () =
+  let responses = run_server_with (basic_server ())
+    [{|{"jsonrpc":"2.0","id":1,"method":"completion/complete","params":{"ref":{"type":"ref/prompt","name":"x"},"argument":{"name":"n","value":"v"}}}|}]
+  in
+  assert_has_error (List.hd responses)
+
+let test_completion_invalid_params () =
+  let responses = run_server_with (completion_server ())
+    [{|{"jsonrpc":"2.0","id":1,"method":"completion/complete","params":{"bad":"data"}}|}]
+  in
+  assert_has_error (List.hd responses)
+
 (* ── test suite ───────────────────────────────────────── *)
 
 let () =
@@ -387,6 +507,7 @@ let () =
       Alcotest.test_case "basic" `Quick test_initialize;
       Alcotest.test_case "version negotiation" `Quick test_initialize_version_negotiation;
       Alcotest.test_case "capabilities reflect tools" `Quick test_initialize_capabilities_reflect_tools;
+      Alcotest.test_case "has logging capability" `Quick test_initialize_has_logging_cap;
     ];
     "ping", [
       Alcotest.test_case "responds" `Quick test_ping;
@@ -415,5 +536,17 @@ let () =
     ];
     "empty server", [
       Alcotest.test_case "no capabilities" `Quick test_empty_server_no_tools_cap;
+    ];
+    "logging", [
+      Alcotest.test_case "set level" `Quick test_logging_set_level;
+      Alcotest.test_case "set level invalid" `Quick test_logging_set_level_invalid;
+      Alcotest.test_case "set level missing params" `Quick test_logging_set_level_missing_params;
+      Alcotest.test_case "notification sent" `Quick test_logging_notification_sent;
+      Alcotest.test_case "notification filtered" `Quick test_logging_notification_filtered;
+    ];
+    "completion", [
+      Alcotest.test_case "complete" `Quick test_completion_complete;
+      Alcotest.test_case "no handler" `Quick test_completion_no_handler;
+      Alcotest.test_case "invalid params" `Quick test_completion_invalid_params;
     ];
   ]

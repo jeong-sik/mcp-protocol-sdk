@@ -2,9 +2,21 @@
 
 open Mcp_protocol
 
-type tool_handler = string -> Yojson.Safe.t option -> (Mcp_types.tool_result, string) result
-type resource_handler = string -> (Mcp_types.resource_contents list, string) result
-type prompt_handler = string -> (string * string) list -> (Mcp_types.prompt_result, string) result
+(* ── context ─────────────────────────────────────────── *)
+
+type context = {
+  send_notification : method_:string -> params:Yojson.Safe.t option -> (unit, string) result;
+  send_log : Logging.log_level -> string -> (unit, string) result;
+  send_progress : token:Mcp_result.progress_token -> progress:float -> total:float option -> (unit, string) result;
+}
+
+(* ── handler types ───────────────────────────────────── *)
+
+type tool_handler = context -> string -> Yojson.Safe.t option -> (Mcp_types.tool_result, string) result
+type resource_handler = context -> string -> (Mcp_types.resource_contents list, string) result
+type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.prompt_result, string) result
+type completion_handler =
+  Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
 
 type registered_tool = {
   tool: Mcp_types.tool;
@@ -28,10 +40,18 @@ type t = {
   tools: registered_tool list;
   resources: registered_resource list;
   prompts: registered_prompt list;
+  completion_handler: completion_handler option;
+  (* Runtime state: set during run, used for send_notification *)
+  mutable transport_ref: Stdio_transport.t option;
+  mutable log_level: Logging.log_level;
 }
 
 let create ~name ~version ?instructions () =
-  { name; version; instructions; tools = []; resources = []; prompts = [] }
+  { name; version; instructions;
+    tools = []; resources = []; prompts = [];
+    completion_handler = None;
+    transport_ref = None;
+    log_level = Logging.Warning; }
 
 let add_tool tool handler s =
   { s with tools = s.tools @ [{ tool; handler }] }
@@ -41,6 +61,48 @@ let add_resource resource handler s =
 
 let add_prompt prompt handler s =
   { s with prompts = s.prompts @ [{ prompt; handler }] }
+
+let add_completion_handler handler s =
+  { s with completion_handler = Some handler }
+
+(* ── notification sending ────────────────────────────── *)
+
+let send_notification_via_transport transport ~method_ ~params =
+  let msg = Jsonrpc.make_notification ~method_ ?params () in
+  Stdio_transport.write transport msg
+
+let send_notification s ~method_ ~params =
+  match s.transport_ref with
+  | None -> Error "Server is not running (no transport)"
+  | Some transport -> send_notification_via_transport transport ~method_ ~params
+
+(* ── context builder ─────────────────────────────────── *)
+
+let make_context transport log_level_ref =
+  let send_notification ~method_ ~params =
+    send_notification_via_transport transport ~method_ ~params
+  in
+  let send_log level message =
+    if Logging.should_log ~min_level:!log_level_ref ~msg_level:level then
+      let msg = Logging.{ level; logger = None; data = `String message } in
+      send_notification
+        ~method_:Notifications.logging_message
+        ~params:(Some (Logging.logging_message_to_yojson msg))
+    else
+      Ok ()
+  in
+  let send_progress ~token ~progress ~total =
+    let p = Mcp_result.{
+      progress_token = token;
+      progress;
+      total;
+      message = None;
+    } in
+    send_notification
+      ~method_:Notifications.progress
+      ~params:(Some (Mcp_result.progress_to_yojson p))
+  in
+  { send_notification; send_log; send_progress }
 
 (* ── capabilities ─────────────────────────────────────── *)
 
@@ -57,12 +119,21 @@ let server_capabilities s =
     if s.prompts = [] then None
     else Some (`Assoc [("listChanged", `Bool false)])
   in
+  let logging_cap = Some (`Assoc []) in
+  let completion_cap = match s.completion_handler with
+    | Some _ -> Some (`Assoc [])
+    | None -> None
+  in
+  let experimental = match completion_cap with
+    | Some c -> Some (`Assoc [("completion", c)])
+    | None -> None
+  in
   Mcp_types.{
     tools = tools_cap;
     resources = resources_cap;
     prompts = prompts_cap;
-    logging = None;
-    experimental = None;
+    logging = logging_cap;
+    experimental;
   }
 
 (* ── request handlers ─────────────────────────────────── *)
@@ -96,7 +167,7 @@ let handle_tools_list s id =
   let tools_json = List.map (fun rt -> Mcp_types.tool_to_yojson rt.tool) s.tools in
   Jsonrpc.make_response ~id ~result:(`Assoc [("tools", `List tools_json)])
 
-let handle_tools_call s id params =
+let handle_tools_call s ctx id params =
   match params with
   | Some (`Assoc fields) ->
     let name = match List.assoc_opt "name" fields with
@@ -117,7 +188,7 @@ let handle_tools_call s id params =
         Jsonrpc.make_error ~id ~code:Error_codes.tool_execution_error
           ~message:(Printf.sprintf "Unknown tool: %s" tool_name) ()
       | Some rt ->
-        begin match rt.handler tool_name arguments with
+        begin match rt.handler ctx tool_name arguments with
         | Ok result ->
           Jsonrpc.make_response ~id
             ~result:(Mcp_types.tool_result_to_yojson result)
@@ -137,7 +208,7 @@ let handle_resources_list s id =
   in
   Jsonrpc.make_response ~id ~result:(`Assoc [("resources", `List resources_json)])
 
-let handle_resources_read s id params =
+let handle_resources_read s ctx id params =
   match params with
   | Some (`Assoc fields) ->
     let uri = match List.assoc_opt "uri" fields with
@@ -157,7 +228,7 @@ let handle_resources_read s id params =
         Jsonrpc.make_error ~id ~code:Error_codes.resource_not_found
           ~message:(Printf.sprintf "Unknown resource: %s" resource_uri) ()
       | Some rr ->
-        begin match rr.handler resource_uri with
+        begin match rr.handler ctx resource_uri with
         | Ok contents ->
           let contents_json =
             List.map Mcp_types.resource_contents_to_yojson contents
@@ -180,7 +251,7 @@ let handle_prompts_list s id =
   in
   Jsonrpc.make_response ~id ~result:(`Assoc [("prompts", `List prompts_json)])
 
-let handle_prompts_get s id params =
+let handle_prompts_get s ctx id params =
   match params with
   | Some (`Assoc fields) ->
     let name = match List.assoc_opt "name" fields with
@@ -208,7 +279,7 @@ let handle_prompts_get s id params =
         Jsonrpc.make_error ~id ~code:Error_codes.prompt_not_found
           ~message:(Printf.sprintf "Unknown prompt: %s" prompt_name) ()
       | Some rp ->
-        begin match rp.handler prompt_name arguments with
+        begin match rp.handler ctx prompt_name arguments with
         | Ok result ->
           Jsonrpc.make_response ~id
             ~result:(Mcp_types.prompt_result_to_yojson result)
@@ -222,9 +293,70 @@ let handle_prompts_get s id params =
     Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
       ~message:"Invalid prompts/get params" ()
 
+(* ── logging/setLevel handler ────────────────────────── *)
+
+let handle_logging_set_level log_level_ref id params =
+  match params with
+  | Some json ->
+    begin match Logging.set_level_params_of_yojson json with
+    | Ok p ->
+      log_level_ref := p.Logging.level;
+      Jsonrpc.make_response ~id ~result:(`Assoc [])
+    | Error msg ->
+      Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+        ~message:(Printf.sprintf "Invalid logging/setLevel params: %s" msg) ()
+    end
+  | None ->
+    Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+      ~message:"Missing params for logging/setLevel" ()
+
+(* ── completion/complete handler ─────────────────────── *)
+
+let handle_completion_complete s id params =
+  match s.completion_handler with
+  | None ->
+    Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
+      ~message:"No completion handler registered" ()
+  | Some handler ->
+    match params with
+    | Some (`Assoc fields) ->
+      let ref_ = match List.assoc_opt "ref" fields with
+        | Some j -> Mcp_types.completion_reference_of_yojson j
+        | None -> Error "Missing 'ref' in completion/complete params"
+      in
+      let argument = match List.assoc_opt "argument" fields with
+        | Some (`Assoc arg_fields) ->
+          let name = match List.assoc_opt "name" arg_fields with
+            | Some (`String n) -> Ok n
+            | _ -> Error "Missing 'name' in argument"
+          in
+          let value = match List.assoc_opt "value" arg_fields with
+            | Some (`String v) -> Ok v
+            | _ -> Error "Missing 'value' in argument"
+          in
+          begin match name, value with
+          | Ok n, Ok v -> Ok (n, v)
+          | Error e, _ | _, Error e -> Error e
+          end
+        | _ -> Error "Missing 'argument' in completion/complete params"
+      in
+      begin match ref_, argument with
+      | Ok ref_, Ok (arg_name, arg_value) ->
+        let result = handler ref_ arg_name arg_value in
+        let completion_json = Mcp_types.completion_result_to_yojson result in
+        Jsonrpc.make_response ~id
+          ~result:(`Assoc [("completion", completion_json)])
+      | Error msg, _ | _, Error msg ->
+        Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+          ~message:msg ()
+      end
+    | _ ->
+      Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+        ~message:"Invalid completion/complete params" ()
+
 (* ── dispatch ─────────────────────────────────────────── *)
 
-let dispatch s (msg : Jsonrpc.message) : Jsonrpc.message option =
+let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message option =
   match msg with
   | Request req ->
     let response = match req.method_ with
@@ -235,15 +367,19 @@ let dispatch s (msg : Jsonrpc.message) : Jsonrpc.message option =
       | m when m = Notifications.tools_list ->
         handle_tools_list s req.id
       | m when m = Notifications.tools_call ->
-        handle_tools_call s req.id req.params
+        handle_tools_call s ctx req.id req.params
       | m when m = Notifications.resources_list ->
         handle_resources_list s req.id
       | m when m = Notifications.resources_read ->
-        handle_resources_read s req.id req.params
+        handle_resources_read s ctx req.id req.params
       | m when m = Notifications.prompts_list ->
         handle_prompts_list s req.id
       | m when m = Notifications.prompts_get ->
-        handle_prompts_get s req.id req.params
+        handle_prompts_get s ctx req.id req.params
+      | m when m = Notifications.logging_set_level ->
+        handle_logging_set_level log_level_ref req.id req.params
+      | m when m = Notifications.completion_complete ->
+        handle_completion_complete s req.id req.params
       | _ ->
         Jsonrpc.make_error ~id:req.id
           ~code:Error_codes.method_not_found
@@ -259,6 +395,9 @@ let dispatch s (msg : Jsonrpc.message) : Jsonrpc.message option =
 
 let run s ~stdin ~stdout =
   let transport = Stdio_transport.create ~stdin ~stdout in
+  s.transport_ref <- Some transport;
+  let log_level_ref = ref s.log_level in
+  let ctx = make_context transport log_level_ref in
   let rec loop () =
     match Stdio_transport.read transport with
     | None -> ()
@@ -266,7 +405,7 @@ let run s ~stdin ~stdout =
       Printf.eprintf "[%s] Read error: %s\n%!" s.name e;
       loop ()
     | Some (Ok msg) ->
-      begin match dispatch s msg with
+      begin match dispatch s ctx log_level_ref msg with
       | Some response ->
         begin match Stdio_transport.write transport response with
         | Ok () -> ()
@@ -277,4 +416,6 @@ let run s ~stdin ~stdout =
       loop ()
   in
   loop ();
+  s.log_level <- !log_level_ref;
+  s.transport_ref <- None;
   Stdio_transport.close transport

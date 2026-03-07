@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-07
+
+### Added
+- `Client` module in `mcp_protocol_eio`: typed API for connecting to MCP servers
+  (`initialize`, `ping`, `list_tools`, `call_tool`, `list_resources`, `read_resource`,
+  `list_prompts`, `get_prompt`, `close`).
+- `Server.context` type: handler context with `send_notification`, `send_log`, `send_progress`
+  for server-to-client notifications during request handling.
+- `logging/setLevel` auto-handler in Server (updates internal log level, filters `send_log`).
+- `completion/complete` handler registration via `Server.add_completion_handler`.
+- `Server.send_notification`: send arbitrary notifications to the connected client.
+- `echo_client` example: subprocess-based MCP client connecting to `echo_server`.
+- 15 new client unit tests (mock I/O based).
+- 5 new integration tests (Server ↔ Client via Eio pipes).
+
+### Changed
+- **BREAKING**: Handler signatures now receive `context` as first parameter
+  (`tool_handler`, `resource_handler`, `prompt_handler` all take `context ->` prefix).
+
 ## [0.5.0] - 2026-03-07
 
 ### Added
@@ -101,6 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Http_negotiation` module: Accept header parsing, transport negotiation.
 - `Version` module: protocol version handling and negotiation.
 
+[0.6.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.2.2...v0.3.0

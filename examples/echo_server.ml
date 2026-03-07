@@ -20,7 +20,7 @@ let echo_tool =
     ])
     ()
 
-let echo_handler _name arguments =
+let echo_handler _ctx _name arguments =
   let text =
     match arguments with
     | Some (`Assoc args) ->
@@ -37,7 +37,7 @@ let () =
   let server =
     Mcp_protocol_eio.Server.create
       ~name:"echo-server"
-      ~version:"0.5.0"
+      ~version:"0.6.0"
       ~instructions:"A minimal echo server for testing the MCP Server framework."
       ()
     |> Mcp_protocol_eio.Server.add_tool echo_tool echo_handler
