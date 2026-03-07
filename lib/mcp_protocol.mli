@@ -16,14 +16,6 @@ module Logging = Logging
 module Sampling = Sampling
 module Notifications = Notifications
 
-(** {1 Backward Compatibility Modules}
-
-    @deprecated Use the specific modules above directly.
-*)
-
-module Protocol = Protocol
-module Resources = Resources
-
 (** {1 Convenience Re-exports} *)
 
 val protocol_version : string

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-07
+
+### Added
+- `mcp_protocol_eio` sub-library: Eio-based stdio transport (`Stdio_transport`).
+- `echo_server` example: minimal MCP server handling initialize, ping, tools/list, tools/call.
+- 14 new tests for stdio transport (read/write/roundtrip/close).
+
+### Removed
+- **BREAKING**: `Protocol` module removed (deprecated in v0.3.0). Use `Mcp_types`, `Jsonrpc`, `Error_codes` directly.
+- **BREAKING**: `Resources` module removed (deprecated in v0.3.0). Use `Mcp_types` directly.
+
 ## [0.3.0] - 2026-03-07
 
 ### Added
@@ -77,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Http_negotiation` module: Accept header parsing, transport negotiation.
 - `Version` module: protocol version handling and negotiation.
 
+[0.4.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.2.0...v0.2.2
 [0.2.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.1.1...v0.2.0

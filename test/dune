@@ -11,3 +11,7 @@
   test_sampling
   test_notifications)
  (libraries mcp_protocol alcotest))
+
+(tests
+ (names test_stdio_transport)
+ (libraries mcp_protocol mcp_protocol_eio eio eio_main alcotest yojson))

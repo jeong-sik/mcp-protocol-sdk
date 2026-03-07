@@ -60,14 +60,6 @@ module Sampling = Sampling
 (** MCP method string constants *)
 module Notifications = Notifications
 
-(** {1 Backward Compatibility Modules} *)
-
-(** Legacy Protocol module for existing code *)
-module Protocol = Protocol
-
-(** Legacy Resources module for existing code *)
-module Resources = Resources
-
 (** {1 Convenience Re-exports} *)
 
 (** Protocol version string *)

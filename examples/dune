@@ -1,0 +1,5 @@
+(executable
+ (name echo_server)
+ (public_name mcp_echo_server)
+ (package mcp_protocol_eio)
+ (libraries mcp_protocol mcp_protocol_eio eio_main yojson))
