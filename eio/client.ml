@@ -228,13 +228,17 @@ let send_request t ~method_ ?params ?(timeout = default_timeout) () =
       begin try
         tf.run timeout (fun () -> read_response t id)
       with Eio.Time.Timeout ->
-        (* Best effort: notify peer we gave up *)
-        let _: (unit, string) result = send_notification t
-          ~method_:Notifications.cancelled
-          ~params:(`Assoc [
-            ("requestId", Jsonrpc.id_to_yojson id);
-            ("reason", `String "Request timed out")
-          ]) () in
+        (* Best effort: notify peer we gave up — guard against transport errors *)
+        (try
+          ignore (send_notification t
+            ~method_:Notifications.cancelled
+            ~params:(`Assoc [
+              ("requestId", Jsonrpc.id_to_yojson id);
+              ("reason", `String "Request timed out")
+            ]) ())
+        with
+        | Out_of_memory | Stack_overflow as exn -> raise exn
+        | _exn -> ());
         Error (Printf.sprintf "Request timed out after %.1fs" timeout)
       end
 
