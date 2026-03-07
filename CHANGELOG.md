@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-07
+
+### Added
+- `Server` module in `mcp_protocol_eio`: handler registration, automatic lifecycle management
+  (initialize/initialized handshake, ping/pong, version negotiation), and method dispatch.
+- Tool, Resource, and Prompt handler types with `add_tool`, `add_resource`, `add_prompt` builder functions.
+- `Server.run` main loop with automatic MCP protocol handling.
+- 19 new tests for server framework (initialize, ping, tools, resources, prompts, dispatch).
+- `echo_server` example rewritten to use `Server` framework (125 lines to 48 lines).
+
+### Changed
+- `echo_server` example now uses `Server.create |> add_tool |> run` instead of manual dispatch.
+
 ## [0.4.0] - 2026-03-07
 
 ### Added
@@ -88,6 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Http_negotiation` module: Accept header parsing, transport negotiation.
 - `Version` module: protocol version handling and negotiation.
 
+[0.5.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.2.0...v0.2.2
