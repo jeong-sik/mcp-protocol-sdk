@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-07
+
 ### Added
+- **Bidirectional Server→Client requests**: Server handlers can now send requests
+  to the connected Client and receive typed responses.
+  - `context.request_sampling`: send `sampling/createMessage` to the Client.
+  - `context.request_roots_list`: send `roots/list` to the Client.
+  - `context.request_elicitation`: send `elicitation/create` to the Client.
+- **Client callback registration**: builder functions for handling Server→Client requests.
+  - `Client.on_sampling`: register a `sampling/createMessage` handler.
+  - `Client.on_roots_list`: register a `roots/list` handler.
+  - `Client.on_elicitation`: register an `elicitation/create` handler.
+  - `Client.on_notification`: register a generic notification handler.
+- Client `read_response` now dispatches incoming `Jsonrpc.Request` to registered
+  handlers while waiting for its own response (interleaved dispatch).
+- Client `initialize` advertises capabilities (`sampling`, `roots`, `elicitation`)
+  based on which handlers are registered.
+- 10 new client callback unit tests.
+- 5 new bidirectional integration tests (Server↔Client via Eio pipes).
 - `Jsonrpc.inbound` plus `inbound_of_yojson` / `inbound_of_string` for adapters that normalize requests and notifications through one server-facing shape.
 - `Jsonrpc.make_*_json` helpers for emitting wire JSON directly without an extra `message_to_yojson` conversion step.
 
@@ -129,6 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Http_negotiation` module: Accept header parsing, transport negotiation.
 - `Version` module: protocol version handling and negotiation.
 
+[0.7.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.3.0...v0.4.0
