@@ -16,6 +16,8 @@ module Session = Session
 module Logging = Logging
 module Sampling = Sampling
 module Notifications = Notifications
+module Protocol = Protocol
+module Resources = Resources
 
 (** {1 Convenience Re-exports} *)
 

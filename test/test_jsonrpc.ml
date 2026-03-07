@@ -178,6 +178,14 @@ let test_message_parse_invalid () =
     true
     (Result.is_error (Jsonrpc.message_of_yojson j))
 
+let test_message_parse_non_object () =
+  let cases = [`String "hello"; `Int 42; `List [`Int 1]; `Bool true] in
+  List.iter (fun j ->
+    Alcotest.(check bool) "non-object json returns Error"
+      true
+      (Result.is_error (Jsonrpc.message_of_yojson j))
+  ) cases
+
 (* --- make_* helpers --- *)
 
 let test_make_request () =
@@ -332,6 +340,7 @@ let () =
       Alcotest.test_case "parse response" `Quick test_message_parse_response;
       Alcotest.test_case "parse error" `Quick test_message_parse_error;
       Alcotest.test_case "parse invalid" `Quick test_message_parse_invalid;
+      Alcotest.test_case "parse non-object" `Quick test_message_parse_non_object;
     ];
     "make_helpers", [
       Alcotest.test_case "make_request" `Quick test_make_request;
