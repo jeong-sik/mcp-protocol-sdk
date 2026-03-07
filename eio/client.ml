@@ -2,15 +2,37 @@
 
 open Mcp_protocol
 
+type sampling_handler =
+  Sampling.create_message_params -> (Sampling.create_message_result, string) result
+type roots_handler =
+  unit -> (Mcp_types.root list, string) result
+type elicitation_handler =
+  Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result
+type notification_handler =
+  string -> Yojson.Safe.t option -> unit
+
 type t = {
   transport: Stdio_transport.t;
   mutable next_id: int;
+  sampling_handler: sampling_handler option;
+  roots_handler: roots_handler option;
+  elicitation_handler: elicitation_handler option;
+  notification_handler: notification_handler option;
 }
 
 let create ~stdin ~stdout = {
   transport = Stdio_transport.create ~stdin ~stdout;
   next_id = 1;
+  sampling_handler = None;
+  roots_handler = None;
+  elicitation_handler = None;
+  notification_handler = None;
 }
+
+let on_sampling handler t = { t with sampling_handler = Some handler }
+let on_roots_list handler t = { t with roots_handler = Some handler }
+let on_elicitation handler t = { t with elicitation_handler = Some handler }
+let on_notification handler t = { t with notification_handler = Some handler }
 
 (* ── request/response ─────────────────────────────── *)
 

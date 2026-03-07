@@ -29,6 +29,40 @@ type t
     @param stdout Sink to write requests to the server. *)
 val create : stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> t
 
+(** {2 Callback Registration}
+
+    Register handlers for server-initiated requests.
+    The client automatically dispatches incoming requests
+    during [read_response] and sends responses back. *)
+
+(** Handler for sampling/createMessage requests from the server. *)
+type sampling_handler =
+  Sampling.create_message_params -> (Sampling.create_message_result, string) result
+
+(** Handler for roots/list requests from the server. *)
+type roots_handler =
+  unit -> (Mcp_types.root list, string) result
+
+(** Handler for elicitation/create requests from the server. *)
+type elicitation_handler =
+  Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result
+
+(** Handler for incoming notifications from the server. *)
+type notification_handler =
+  string -> Yojson.Safe.t option -> unit
+
+(** Register a sampling handler. *)
+val on_sampling : sampling_handler -> t -> t
+
+(** Register a roots/list handler. *)
+val on_roots_list : roots_handler -> t -> t
+
+(** Register an elicitation handler. *)
+val on_elicitation : elicitation_handler -> t -> t
+
+(** Register a notification handler. *)
+val on_notification : notification_handler -> t -> t
+
 (** {2 Lifecycle} *)
 
 (** Perform the MCP initialize handshake.
