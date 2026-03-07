@@ -9,12 +9,15 @@ type t
 
 (** Create a stdio transport from Eio flow endpoints.
 
-    @param stdin  Source to read JSON-RPC messages from (one per line).
-    @param stdout Sink to write JSON-RPC messages to (one per line).
+    @param stdin    Source to read JSON-RPC messages from (one per line).
+    @param stdout   Sink to write JSON-RPC messages to (one per line).
+    @param max_size Maximum buffer size in bytes (default: 1 MB).
 *)
 val create :
   stdin:_ Eio.Flow.source ->
   stdout:_ Eio.Flow.sink ->
+  ?max_size:int ->
+  unit ->
   t
 
 (** Read the next JSON-RPC message from stdin.

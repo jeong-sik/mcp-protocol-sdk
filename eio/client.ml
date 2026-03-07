@@ -21,7 +21,7 @@ type t = {
 }
 
 let create ~stdin ~stdout = {
-  transport = Stdio_transport.create ~stdin ~stdout;
+  transport = Stdio_transport.create ~stdin ~stdout ();
   next_id = 1;
   sampling_handler = None;
   roots_handler = None;

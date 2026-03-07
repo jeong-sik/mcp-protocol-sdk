@@ -10,8 +10,8 @@ type t = {
   mutable closed: bool;
 }
 
-let create ~stdin ~stdout =
-  let reader = Eio.Buf_read.of_flow stdin ~max_size:(1024 * 1024) in
+let create ~stdin ~stdout ?(max_size = 1024 * 1024) () =
+  let reader = Eio.Buf_read.of_flow stdin ~max_size in
   { reader; sink = (stdout :> Eio.Flow.sink_ty Eio.Resource.t); closed = false }
 
 let rec read t =
@@ -34,6 +34,9 @@ let rec read t =
           Some (Error (Printf.sprintf "JSON parse error: %s" e))
       end
     | exception End_of_file -> None
+    | exception (Eio.Io _ as ex) ->
+      t.closed <- true;
+      Some (Error (Printf.sprintf "Transport read error: %s" (Printexc.to_string ex)))
 
 let write t msg =
   if t.closed then Error "Transport is closed"

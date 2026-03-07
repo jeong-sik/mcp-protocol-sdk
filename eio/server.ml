@@ -471,7 +471,7 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
 (* ── main loop ────────────────────────────────────────── *)
 
 let run s ~stdin ~stdout =
-  let transport = Stdio_transport.create ~stdin ~stdout in
+  let transport = Stdio_transport.create ~stdin ~stdout () in
   s.transport_ref <- Some transport;
   let log_level_ref = ref s.log_level in
   let next_id_ref = ref s.next_request_id in
