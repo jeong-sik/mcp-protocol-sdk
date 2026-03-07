@@ -459,6 +459,54 @@ let test_bidi_multiple_requests () =
   | Ok () -> ()
   | Error e -> Alcotest.fail e
 
+(** Run integration with clock for timeout support. *)
+let run_integration_with_clock ?(server = make_server ()) ?(setup = Fun.id) fn =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.clock env in
+  let c2s_r, c2s_w = Eio_unix.pipe sw in
+  let s2c_r, s2c_w = Eio_unix.pipe sw in
+  let result = ref (Error "test did not run") in
+  Eio.Fiber.both
+    (fun () ->
+      Mcp_protocol_eio.Server.run server ~stdin:c2s_r ~stdout:s2c_w ~clock ())
+    (fun () ->
+      let client = Mcp_protocol_eio.Client.create ~stdin:s2c_r ~stdout:c2s_w ~clock () in
+      let client = setup client in
+      result := fn client;
+      Mcp_protocol_eio.Client.close client;
+      Eio.Flow.close c2s_w);
+  !result
+
+(** Full lifecycle with clock — verifies timeout params don't break normal flow. *)
+let test_lifecycle_with_clock () =
+  match run_integration_with_clock (fun client ->
+    match Mcp_protocol_eio.Client.initialize client
+      ~client_name:"clock-test" ~client_version:"1.0" with
+    | Error e -> Error e
+    | Ok init ->
+      if init.server_info.name <> "integration-server" then
+        Error "wrong server name"
+      else
+        match Mcp_protocol_eio.Client.ping client with
+        | Error e -> Error e
+        | Ok () ->
+          match Mcp_protocol_eio.Client.list_tools client with
+          | Error e -> Error e
+          | Ok tools ->
+            if List.length tools <> 1 then Error "expected 1 tool"
+            else
+              let args = `Assoc [("text", `String "clock")] in
+              match Mcp_protocol_eio.Client.call_tool client ~name:"echo" ~arguments:args () with
+              | Error e -> Error e
+              | Ok result ->
+                match result.content with
+                | [Mcp_types.TextContent t] when t.text = "Echo: clock" -> Ok ()
+                | _ -> Error "unexpected result"
+  ) with
+  | Ok () -> ()
+  | Error e -> Alcotest.fail e
+
 (* ── test suite ──────────────────────────────────────── *)
 
 let () =
@@ -482,5 +530,8 @@ let () =
       Alcotest.test_case "elicitation" `Quick test_bidi_elicitation;
       Alcotest.test_case "sampling no handler" `Quick test_bidi_sampling_no_handler;
       Alcotest.test_case "multiple requests" `Quick test_bidi_multiple_requests;
+    ];
+    "timeout", [
+      Alcotest.test_case "lifecycle with clock" `Quick test_lifecycle_with_clock;
     ];
   ]

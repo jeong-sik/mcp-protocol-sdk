@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-08
+
+### Added
+- `Mcp_error` module: typed error hierarchy with `Protocol` (wire) and `Sdk` (local) variants.
+- Request timeout: `Client.create` and `Server.run` support `?clock` parameter for 60s timeout (matches TypeScript SDK).
+  - Sends `notifications/cancelled` on client request timeout.
+- `notifications/cancelled` handling: Client aborts in-flight request; Server logs cancellation.
+- Transport `max_size` is now configurable via `Stdio_transport.create ~max_size`.
+
+### Fixed
+- `jsonrpc.ml` `message_of_yojson`: narrowed bare `with _ ->` to specific exception types.
+- `Stdio_transport.write`: catches `Eio.Io` exceptions, marks transport closed.
+- `Stdio_transport.read`: catches `Eio.Io` exceptions (broken pipe), marks transport closed.
+
+### Changed
+- `Client.create` signature: now accepts optional `?clock` and trailing `()`.
+- `Server.run` signature: now accepts optional `?clock` and trailing `()`.
+- `Stdio_transport.create` signature: now accepts optional `?max_size` and trailing `()`.
+
 ## [0.7.0] - 2026-03-07
 
 ### Added
@@ -147,6 +166,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Http_negotiation` module: Accept header parsing, transport negotiation.
 - `Version` module: protocol version handling and negotiation.
 
+[0.8.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.4.0...v0.5.0
