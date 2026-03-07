@@ -39,6 +39,9 @@ module Mcp_types = Mcp_types
 (** Error codes for JSON-RPC and MCP *)
 module Error_codes = Error_codes
 
+(** Typed error hierarchy (protocol + SDK errors) *)
+module Mcp_error = Mcp_error
+
 (** HTTP content negotiation *)
 module Http_negotiation = Http_negotiation
 
