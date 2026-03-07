@@ -9,6 +9,7 @@
   test_mcp_result
   test_logging
   test_sampling
+  test_backward_compat
   test_notifications)
  (libraries mcp_protocol alcotest))
 
