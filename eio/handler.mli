@@ -55,6 +55,26 @@ val add_resource : Mcp_types.resource -> resource_handler -> t -> t
 val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
 val add_completion_handler : completion_handler -> t -> t
 
+(** {2 Shared Client Helpers} *)
+
+(** Parse a JSON list field from a response, applying [parser] to each element.
+    Silently drops items that fail to parse. *)
+val parse_list_field :
+  string ->
+  (Yojson.Safe.t -> ('a, string) result) ->
+  Yojson.Safe.t ->
+  ('a list, string) result
+
+(** Build the JSON params for an [initialize] request.
+    Used by both stdio and HTTP clients. *)
+val build_initialize_params :
+  has_sampling:bool ->
+  has_roots:bool ->
+  has_elicitation:bool ->
+  client_name:string ->
+  client_version:string ->
+  Yojson.Safe.t
+
 (** {2 Accessors} *)
 
 val name : t -> string

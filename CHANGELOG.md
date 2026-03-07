@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `Handler.subscribed_uris` now returns URIs in sorted order (was insertion order) due to `StringSet` migration.
+- `parse_list_field` and `build_initialize_params` moved to shared `Handler` module (was duplicated in stdio and HTTP clients).
+- `validate_session_or_error` extracted in HTTP server (was copy-pasted 3x across POST/GET/DELETE handlers).
+
+### Fixed
+- `Http_session.generate_session_id`: added `/dev/urandom` fallback (uses `Random` when urandom unavailable).
+- `http/sse.ml`: replaced manual string slicing with `starts_with`/`strip_prefix` helpers.
+- `http/http_server.ml`: renamed `_sse_content_type` to `sse_content_type` (was prefixed as unused but actually referenced).
+
+### Improved
+- `subscribed_uris`: O(n) `List.mem` replaced with O(log n) `StringSet.mem`.
+
 ## [0.9.0] - 2026-03-08
 
 ### Added

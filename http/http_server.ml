@@ -33,7 +33,7 @@ let add_completion_handler handler s =
 (* ── helpers ─────────────────────────────────── *)
 
 let json_content_type = "application/json"
-let _sse_content_type = "text/event-stream"
+let sse_content_type = "text/event-stream"
 
 let cors_headers = [
   ("Access-Control-Allow-Origin", "*");
@@ -131,6 +131,20 @@ let make_context s : Mcp_protocol_eio.Handler.context =
   { send_notification; send_log; send_progress;
     request_sampling; request_roots_list; request_elicitation }
 
+(* ── session validation helper ───────────────── *)
+
+let get_session_header request =
+  Http.Header.get (Http.Request.headers request) Http_session.header_name
+
+let validate_session_or_error session request =
+  match Http_session.validate session (get_session_header request) with
+  | Ok () -> Ok ()
+  | Error (`Bad_request msg) ->
+    Error (respond_json ~status:`Bad_request (`Assoc ["error", `String msg]))
+  | Error `Not_found ->
+    Error (respond_json ~status:`Not_found
+      (`Assoc ["error", `String "Session not found"]))
+
 (* ── dispatch logic ──────────────────────────── *)
 
 (** Parse JSON-RPC and dispatch through handler, returning a response function *)
@@ -177,37 +191,22 @@ let handle_post s request body_str : Cohttp_eio.Server.response =
     if is_init then
       dispatch_jsonrpc s json true
     else
-      let header_value =
-        Http.Header.get (Http.Request.headers request) Http_session.header_name
-      in
-      match Http_session.validate s.session header_value with
-      | Error (`Bad_request msg) ->
-        respond_json ~status:`Bad_request (`Assoc ["error", `String msg])
-      | Error `Not_found ->
-        respond_json ~status:`Not_found
-          (`Assoc ["error", `String "Session not found"])
-      | Ok () ->
-        dispatch_jsonrpc s json false
+      match validate_session_or_error s.session request with
+      | Error resp -> resp
+      | Ok () -> dispatch_jsonrpc s json false
 
 (* ── GET handler (SSE) ───────────────────────── *)
 
 let handle_get s request : Cohttp_eio.Server.response =
-  let header_value =
-    Http.Header.get (Http.Request.headers request) Http_session.header_name
-  in
-  match Http_session.validate s.session header_value with
-  | Error (`Bad_request msg) ->
-    respond_json ~status:`Bad_request (`Assoc ["error", `String msg])
-  | Error `Not_found ->
-    respond_json ~status:`Not_found
-      (`Assoc ["error", `String "Session not found"])
+  match validate_session_or_error s.session request with
+  | Error resp -> resp
   | Ok () ->
     let _client_id, _stream = Sse.Broadcaster.subscribe s.broadcaster in
     (* v0.9.0: SSE streaming is simplified. Full streaming requires
        Expert mode which will be added in a future version. *)
     Cohttp_eio.Server.respond_string
       ~headers:(Http.Header.of_list [
-        ("Content-Type", _sse_content_type);
+        ("Content-Type", sse_content_type);
         ("Cache-Control", "no-cache");
         ("Connection", "keep-alive");
         ("X-Accel-Buffering", "no");
@@ -217,15 +216,8 @@ let handle_get s request : Cohttp_eio.Server.response =
 (* ── DELETE handler ──────────────────────────── *)
 
 let handle_delete s request : Cohttp_eio.Server.response =
-  let header_value =
-    Http.Header.get (Http.Request.headers request) Http_session.header_name
-  in
-  match Http_session.validate s.session header_value with
-  | Error (`Bad_request msg) ->
-    respond_json ~status:`Bad_request (`Assoc ["error", `String msg])
-  | Error `Not_found ->
-    respond_json ~status:`Not_found
-      (`Assoc ["error", `String "Session not found"])
+  match validate_session_or_error s.session request with
+  | Error resp -> resp
   | Ok () ->
     Http_session.close s.session;
     respond_empty ~status:`OK s.session

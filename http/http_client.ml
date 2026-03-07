@@ -152,45 +152,15 @@ let send_request t ~method_ ?params ?(timeout = default_timeout) () =
       Error (Printf.sprintf "Request timed out after %.1fs" timeout)
     end
 
-(* ── helpers ─────────────────────────────────── *)
-
-let parse_list_field field_name parser result =
-  match result with
-  | `Assoc fields ->
-    begin match List.assoc_opt field_name fields with
-    | Some (`List items) ->
-      let parsed = List.filter_map (fun j ->
-        match parser j with
-        | Ok v -> Some v
-        | Error _ -> None
-      ) items in
-      Ok parsed
-    | _ -> Error (Printf.sprintf "Missing '%s' array in response" field_name)
-    end
-  | _ -> Error "Invalid response format"
-
 (* ── lifecycle ───────────────────────────────── *)
 
 let initialize t ~client_name ~client_version =
-  let caps_fields =
-    (match t.sampling_handler with
-     | Some _ -> [("sampling", `Assoc [])]
-     | None -> []) @
-    (match t.roots_handler with
-     | Some _ -> [("roots", `Assoc [("listChanged", `Bool false)])]
-     | None -> []) @
-    (match t.elicitation_handler with
-     | Some _ -> [("elicitation", `Assoc [])]
-     | None -> [])
+  let params = Mcp_protocol_eio.Handler.build_initialize_params
+    ~has_sampling:(Option.is_some t.sampling_handler)
+    ~has_roots:(Option.is_some t.roots_handler)
+    ~has_elicitation:(Option.is_some t.elicitation_handler)
+    ~client_name ~client_version
   in
-  let params = `Assoc [
-    ("protocolVersion", `String Version.latest);
-    ("capabilities", `Assoc caps_fields);
-    ("clientInfo", `Assoc [
-      ("name", `String client_name);
-      ("version", `String client_version);
-    ]);
-  ] in
   match send_request t ~method_:Notifications.initialize ~params () with
   | Error e -> Error e
   | Ok result ->
@@ -214,7 +184,7 @@ let list_tools ?cursor t =
   in
   match send_request t ~method_:Notifications.tools_list ?params () with
   | Error e -> Error e
-  | Ok result -> parse_list_field "tools" Mcp_types.tool_of_yojson result
+  | Ok result -> Mcp_protocol_eio.Handler.parse_list_field "tools" Mcp_types.tool_of_yojson result
 
 let call_tool t ~name ?arguments () =
   let params_fields = [("name", `String name)] in
@@ -237,14 +207,14 @@ let list_resources ?cursor t =
   match send_request t ~method_:Notifications.resources_list ?params () with
   | Error e -> Error e
   | Ok result ->
-    parse_list_field "resources" Mcp_types.resource_of_yojson result
+    Mcp_protocol_eio.Handler.parse_list_field "resources" Mcp_types.resource_of_yojson result
 
 let read_resource t ~uri =
   let params = `Assoc [("uri", `String uri)] in
   match send_request t ~method_:Notifications.resources_read ~params () with
   | Error e -> Error e
   | Ok result ->
-    parse_list_field "contents" Mcp_types.resource_contents_of_yojson result
+    Mcp_protocol_eio.Handler.parse_list_field "contents" Mcp_types.resource_contents_of_yojson result
 
 let subscribe_resource t ~uri =
   let params = `Assoc [("uri", `String uri)] in
@@ -268,7 +238,7 @@ let list_prompts ?cursor t =
   match send_request t ~method_:Notifications.prompts_list ?params () with
   | Error e -> Error e
   | Ok result ->
-    parse_list_field "prompts" Mcp_types.prompt_of_yojson result
+    Mcp_protocol_eio.Handler.parse_list_field "prompts" Mcp_types.prompt_of_yojson result
 
 let get_prompt t ~name ?arguments () =
   let params_fields = [("name", `String name)] in

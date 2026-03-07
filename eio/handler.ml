@@ -4,6 +4,8 @@
 
 open Mcp_protocol
 
+module StringSet = Set.Make(String)
+
 (* ── context ─────────────────────────────────────────── *)
 
 type context = {
@@ -46,14 +48,14 @@ type t = {
   resources: registered_resource list;
   prompts: registered_prompt list;
   completion_handler: completion_handler option;
-  mutable subscribed_uris: string list;
+  mutable subscribed_uris: StringSet.t;
 }
 
 let create ~name ~version ?instructions () =
   { name; version; instructions;
     tools = []; resources = []; prompts = [];
     completion_handler = None;
-    subscribed_uris = [] }
+    subscribed_uris = StringSet.empty }
 
 let add_tool tool handler s =
   { s with tools = s.tools @ [{ tool; handler }] }
@@ -67,6 +69,39 @@ let add_prompt prompt handler s =
 let add_completion_handler handler s =
   { s with completion_handler = Some handler }
 
+(* ── shared client helpers ────────────────────────────── *)
+
+let parse_list_field field_name parser result =
+  match result with
+  | `Assoc fields ->
+    begin match List.assoc_opt field_name fields with
+    | Some (`List items) ->
+      let parsed = List.filter_map (fun j ->
+        match parser j with
+        | Ok v -> Some v
+        | Error _ -> None
+      ) items in
+      Ok parsed
+    | _ -> Error (Printf.sprintf "Missing '%s' array in response" field_name)
+    end
+  | _ -> Error "Invalid response format"
+
+let build_initialize_params ~has_sampling ~has_roots ~has_elicitation
+    ~client_name ~client_version =
+  let caps_fields =
+    (if has_sampling then [("sampling", `Assoc [])] else []) @
+    (if has_roots then [("roots", `Assoc [("listChanged", `Bool false)])] else []) @
+    (if has_elicitation then [("elicitation", `Assoc [])] else [])
+  in
+  `Assoc [
+    ("protocolVersion", `String Version.latest);
+    ("capabilities", `Assoc caps_fields);
+    ("clientInfo", `Assoc [
+      ("name", `String client_name);
+      ("version", `String client_version);
+    ]);
+  ]
+
 (* ── accessors ───────────────────────────────────────── *)
 
 let name s = s.name
@@ -75,7 +110,7 @@ let instructions s = s.instructions
 let tools s = List.map (fun rt -> rt.tool) s.tools
 let resources s = List.map (fun rr -> rr.resource) s.resources
 let prompts s = List.map (fun rp -> rp.prompt) s.prompts
-let subscribed_uris s = s.subscribed_uris
+let subscribed_uris s = StringSet.elements s.subscribed_uris
 
 (* ── capabilities ─────────────────────────────────────── *)
 
@@ -273,8 +308,7 @@ let handle_resources_subscribe s id params =
   | Some (`Assoc fields) ->
     begin match List.assoc_opt "uri" fields with
     | Some (`String uri) ->
-      if not (List.mem uri s.subscribed_uris) then
-        s.subscribed_uris <- uri :: s.subscribed_uris;
+      s.subscribed_uris <- StringSet.add uri s.subscribed_uris;
       Jsonrpc.make_response ~id ~result:(`Assoc [])
     | _ ->
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
@@ -289,7 +323,7 @@ let handle_resources_unsubscribe s id params =
   | Some (`Assoc fields) ->
     begin match List.assoc_opt "uri" fields with
     | Some (`String uri) ->
-      s.subscribed_uris <- List.filter (fun u -> u <> uri) s.subscribed_uris;
+      s.subscribed_uris <- StringSet.remove uri s.subscribed_uris;
       Jsonrpc.make_response ~id ~result:(`Assoc [])
     | _ ->
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
