@@ -8,25 +8,23 @@
 
     Reference: github.com/modelcontextprotocol/python-sdk/src/mcp/shared/session.py
 
+    v0.3.0: request_id aliased to Jsonrpc.request_id, session_info made immutable,
+    check_timeouts uses fold instead of ref.
+
     v0.2.2: Refactored Request_tracker to use immutable Map instead of
     mutable Hashtbl for OCaml 5.x idiomatic patterns.
 *)
 
 (** {2 Request ID} *)
 
-(** Request ID type (same as Jsonrpc.id, defined here to avoid circular dependency) *)
-type request_id =
+(** Request ID type — alias for [Jsonrpc.request_id]. *)
+type request_id = Jsonrpc.request_id =
   | String_id of string
   | Int_id of int
 
-let request_id_to_yojson = function
-  | String_id s -> `String s
-  | Int_id i -> `Int i
+let request_id_to_yojson = Jsonrpc.request_id_to_yojson
 
-let request_id_of_yojson = function
-  | `String s -> Ok (String_id s)
-  | `Int i -> Ok (Int_id i)
-  | _ -> Error "Invalid request id"
+let request_id_of_yojson = Jsonrpc.request_id_of_yojson
 
 (** {2 Request Tracking} *)
 
@@ -119,16 +117,17 @@ module Request_tracker = struct
 
   let check_timeouts t =
     let now = Unix.gettimeofday () in
-    let timed_out = ref [] in
-    let requests' = RequestMap.filter (fun _ req ->
-      match req.timeout with
-      | Some timeout when now -. req.sent_at > timeout ->
-        timed_out := { req with state = Timed_out } :: !timed_out;
-        false
-      | _ -> true
-    ) t.requests in
+    let timed_out, requests' =
+      RequestMap.fold (fun key req (expired, remaining) ->
+        match req.timeout with
+        | Some timeout when now -. req.sent_at > timeout ->
+          ({ req with state = Timed_out } :: expired, remaining)
+        | _ ->
+          (expired, RequestMap.add key req remaining)
+      ) t.requests ([], RequestMap.empty)
+    in
     let t' = { t with requests = requests' } in
-    (!timed_out, t')
+    (timed_out, t')
 end
 
 (** {2 Session State} *)
@@ -148,13 +147,13 @@ let lifecycle_to_string = function
   | Closing -> "closing"
   | Closed -> "closed"
 
-(** Session info *)
+(** Session info — immutable. State transitions return new values. *)
 type session_info = {
   id: string;
-  mutable lifecycle: lifecycle;
+  lifecycle: lifecycle;
   created_at: float;
-  mutable initialized_at: float option;
-  mutable closed_at: float option;
+  initialized_at: float option;
+  closed_at: float option;
   protocol_version: string;
   server_info: Mcp_types.server_info option;
   client_info: Mcp_types.client_info option;
@@ -171,13 +170,17 @@ let create_session ~id ~protocol_version ?server_info ?client_info () = {
   client_info;
 }
 
+(** Transition session to Ready state. Returns updated session_info. *)
 let session_ready session =
-  session.lifecycle <- Ready;
-  session.initialized_at <- Some (Unix.gettimeofday ())
+  { session with
+    lifecycle = Ready;
+    initialized_at = Some (Unix.gettimeofday ()) }
 
+(** Transition session to Closed state. Returns updated session_info. *)
 let session_close session =
-  session.lifecycle <- Closed;
-  session.closed_at <- Some (Unix.gettimeofday ())
+  { session with
+    lifecycle = Closed;
+    closed_at = Some (Unix.gettimeofday ()) }
 
 (** {2 Connection Errors} *)
 

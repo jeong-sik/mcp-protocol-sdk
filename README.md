@@ -29,7 +29,7 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 0.1.0)))
+ (mcp_protocol (>= 0.3.0)))
 ```
 
 ## Docs
@@ -73,10 +73,18 @@ let err = Jsonrpc.make_error
 ```ocaml
 open Mcp_protocol
 
-(* Define a tool *)
+(* Define a tool (v0.2.2+: title and annotations fields) *)
 let my_tool : Mcp_types.tool = {
   name = "calculate";
   description = Some "Perform mathematical calculations";
+  title = Some "Calculator";
+  annotations = Some {
+    title = None;
+    read_only_hint = Some true;
+    destructive_hint = Some false;
+    idempotent_hint = Some true;
+    open_world_hint = None;
+  };
   input_schema = `Assoc [
     ("type", `String "object");
     ("properties", `Assoc [
@@ -88,6 +96,13 @@ let my_tool : Mcp_types.tool = {
     ("required", `List [`String "expression"])
   ];
 }
+
+(* Or use the convenience constructor *)
+let my_tool2 = Mcp_types.make_tool
+  ~name:"calculate"
+  ~description:"Perform mathematical calculations"
+  ~title:"Calculator"
+  ()
 
 (* Define a resource *)
 let my_resource : Mcp_types.resource = {
@@ -211,9 +226,10 @@ Error_codes.invalid_params     (* -32602 *)
 Error_codes.internal_error     (* -32603 *)
 
 (* MCP-specific errors *)
-Error_codes.request_timeout    (* -32001 *)
-Error_codes.resource_not_found (* -32002 *)
-Error_codes.request_failed     (* -32003 *)
+Error_codes.connection_closed  (* -32001 *)
+Error_codes.request_timeout    (* -32002 *)
+Error_codes.resource_not_found (* -32003 *)
+Error_codes.tool_execution_error (* -32004 *)
 ```
 
 ## Building from Source

@@ -68,19 +68,14 @@ let progress_to_yojson p =
 
 (** {2 Cancellation Support} *)
 
-(** Request ID (duplicated to avoid circular dependency) *)
-type request_id =
+(** Request ID — alias for [Jsonrpc.request_id]. *)
+type request_id = Jsonrpc.request_id =
   | String_id of string
   | Int_id of int
 
-let request_id_to_yojson = function
-  | String_id s -> `String s
-  | Int_id i -> `Int i
+let request_id_to_yojson = Jsonrpc.request_id_to_yojson
 
-let request_id_of_yojson = function
-  | `String s -> Ok (String_id s)
-  | `Int i -> Ok (Int_id i)
-  | _ -> Error "Invalid request id"
+let request_id_of_yojson = Jsonrpc.request_id_of_yojson
 
 (** Cancellation request *)
 type cancel_request = {

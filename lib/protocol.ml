@@ -1,7 +1,7 @@
 (** MCP Protocol - Backward compatibility module.
 
-    Re-exports from new modules for existing code compatibility.
-    New code should use Mcp_types, Jsonrpc, Error_codes directly.
+    @deprecated Use [Mcp_types], [Jsonrpc], [Error_codes] directly.
+    This module will be removed in v0.4.0.
 *)
 
 (** Current MCP protocol version *)

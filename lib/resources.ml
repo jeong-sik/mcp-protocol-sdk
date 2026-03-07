@@ -1,7 +1,7 @@
 (** MCP Resources/ResourceTemplates helpers.
 
-    Backward compatibility module.
-    Re-exports resource types from Mcp_types with helpers for resources/* methods.
+    @deprecated Use [Mcp_types] directly for resource types and serialization.
+    This module will be removed in v0.4.0.
 *)
 
 type resource = Mcp_types.resource
