@@ -34,6 +34,98 @@ let on_roots_list handler t = { t with roots_handler = Some handler }
 let on_elicitation handler t = { t with elicitation_handler = Some handler }
 let on_notification handler t = { t with notification_handler = Some handler }
 
+(* ── server request dispatch ─────────────────────── *)
+
+let send_response t ~id ~result =
+  let msg = Jsonrpc.make_response ~id ~result in
+  ignore (Stdio_transport.write t.transport msg)
+
+let send_error_response t ~id ~code ~message =
+  let msg = Jsonrpc.make_error ~id ~code ~message () in
+  ignore (Stdio_transport.write t.transport msg)
+
+let dispatch_server_request t (req : Jsonrpc.request) =
+  match req.method_ with
+  | m when m = Notifications.sampling_create_message ->
+    begin match t.sampling_handler with
+    | None ->
+      send_error_response t ~id:req.id
+        ~code:Error_codes.method_not_found
+        ~message:"No sampling handler registered"
+    | Some handler ->
+      begin match req.params with
+      | Some json ->
+        begin match Sampling.create_message_params_of_yojson json with
+        | Ok params ->
+          begin match handler params with
+          | Ok result ->
+            send_response t ~id:req.id
+              ~result:(Sampling.create_message_result_to_yojson result)
+          | Error msg ->
+            send_error_response t ~id:req.id
+              ~code:Error_codes.internal_error ~message:msg
+          end
+        | Error msg ->
+          send_error_response t ~id:req.id
+            ~code:Error_codes.invalid_params ~message:msg
+        end
+      | None ->
+        send_error_response t ~id:req.id
+          ~code:Error_codes.invalid_params
+          ~message:"Missing params for sampling/createMessage"
+      end
+    end
+  | m when m = Notifications.roots_list ->
+    begin match t.roots_handler with
+    | None ->
+      send_error_response t ~id:req.id
+        ~code:Error_codes.method_not_found
+        ~message:"No roots handler registered"
+    | Some handler ->
+      begin match handler () with
+      | Ok roots ->
+        let roots_json = List.map Mcp_types.root_to_yojson roots in
+        send_response t ~id:req.id
+          ~result:(`Assoc [("roots", `List roots_json)])
+      | Error msg ->
+        send_error_response t ~id:req.id
+          ~code:Error_codes.internal_error ~message:msg
+      end
+    end
+  | m when m = Notifications.elicitation_create ->
+    begin match t.elicitation_handler with
+    | None ->
+      send_error_response t ~id:req.id
+        ~code:Error_codes.method_not_found
+        ~message:"No elicitation handler registered"
+    | Some handler ->
+      begin match req.params with
+      | Some json ->
+        begin match Mcp_types.elicitation_params_of_yojson json with
+        | Ok params ->
+          begin match handler params with
+          | Ok result ->
+            send_response t ~id:req.id
+              ~result:(Mcp_types.elicitation_result_to_yojson result)
+          | Error msg ->
+            send_error_response t ~id:req.id
+              ~code:Error_codes.internal_error ~message:msg
+          end
+        | Error msg ->
+          send_error_response t ~id:req.id
+            ~code:Error_codes.invalid_params ~message:msg
+        end
+      | None ->
+        send_error_response t ~id:req.id
+          ~code:Error_codes.invalid_params
+          ~message:"Missing params for elicitation/create"
+      end
+    end
+  | _ ->
+    send_error_response t ~id:req.id
+      ~code:Error_codes.method_not_found
+      ~message:(Printf.sprintf "Unknown server request: %s" req.method_)
+
 (* ── request/response ─────────────────────────────── *)
 
 let read_response t expected_id =
@@ -47,7 +139,14 @@ let read_response t expected_id =
         Ok resp.result
       | Jsonrpc.Error err when err.id = expected_id ->
         Error err.error.message
-      | Jsonrpc.Notification _ ->
+      | Jsonrpc.Request req ->
+        dispatch_server_request t req;
+        loop ()
+      | Jsonrpc.Notification notif ->
+        begin match t.notification_handler with
+        | Some handler -> handler notif.method_ notif.params
+        | None -> ()
+        end;
         loop ()
       | _ ->
         loop ()
