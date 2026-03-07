@@ -9,6 +9,12 @@ let id_testable = Alcotest.testable
     (Yojson.Safe.to_string (Jsonrpc.id_to_yojson id)))
   (fun a b -> Jsonrpc.id_to_yojson a = Jsonrpc.id_to_yojson b)
 
+let check_jsonrpc_field label json =
+  let open Yojson.Safe.Util in
+  match member "jsonrpc" json with
+  | `String version -> Alcotest.(check string) label "2.0" version
+  | _ -> Alcotest.fail "missing jsonrpc field"
+
 (* --- id round-trip --- *)
 
 let test_id_string_roundtrip () =
@@ -49,6 +55,7 @@ let test_request_roundtrip () =
     params = None;
   } in
   let j = Jsonrpc.request_to_yojson req in
+  check_jsonrpc_field "request jsonrpc" j;
   match Jsonrpc.request_of_yojson j with
   | Ok decoded ->
     Alcotest.(check string) "jsonrpc" "2.0" decoded.jsonrpc;
@@ -65,6 +72,7 @@ let test_request_with_params () =
     params = Some params;
   } in
   let j = Jsonrpc.request_to_yojson req in
+  check_jsonrpc_field "request params jsonrpc" j;
   match Jsonrpc.request_of_yojson j with
   | Ok decoded ->
     Alcotest.(check (option json)) "params present"
@@ -80,6 +88,7 @@ let test_notification_roundtrip () =
     params = None;
   } in
   let j = Jsonrpc.notification_to_yojson notif in
+  check_jsonrpc_field "notification jsonrpc" j;
   match Jsonrpc.notification_of_yojson j with
   | Ok decoded ->
     Alcotest.(check string) "method" "notifications/initialized" decoded.method_
@@ -94,6 +103,7 @@ let test_response_roundtrip () =
     result = `Assoc [("tools", `List [])];
   } in
   let j = Jsonrpc.response_to_yojson resp in
+  check_jsonrpc_field "response jsonrpc" j;
   match Jsonrpc.response_of_yojson j with
   | Ok decoded ->
     Alcotest.(check json) "result" (`Assoc [("tools", `List [])]) decoded.result
@@ -108,6 +118,7 @@ let test_error_response_roundtrip () =
     error = { code = -32601; message = "Method not found"; data = None };
   } in
   let j = Jsonrpc.error_response_to_yojson err in
+  check_jsonrpc_field "error response jsonrpc" j;
   match Jsonrpc.error_response_of_yojson j with
   | Ok decoded ->
     Alcotest.(check int) "code" (-32601) decoded.error.code;
@@ -199,6 +210,7 @@ let test_make_error () =
 let test_message_to_yojson_roundtrip () =
   let msg = Jsonrpc.make_request ~id:(Int 42) ~method_:"ping" () in
   let j = Jsonrpc.message_to_yojson msg in
+  check_jsonrpc_field "message jsonrpc" j;
   match Jsonrpc.message_of_yojson j with
   | Ok (Request r) ->
     Alcotest.(check string) "method" "ping" r.method_
@@ -219,6 +231,59 @@ let test_message_of_string_invalid_json () =
   Alcotest.(check bool) "invalid json returns Error"
     true
     (Result.is_error (Jsonrpc.message_of_string s))
+
+(* --- inbound --- *)
+
+let test_inbound_of_request () =
+  let json = `Assoc [
+    ("jsonrpc", `String "2.0");
+    ("id", `Int 7);
+    ("method", `String "tools/list");
+  ] in
+  match Jsonrpc.inbound_of_yojson json with
+  | Ok inbound ->
+      Alcotest.(check string) "method" "tools/list" inbound.method_;
+      Alcotest.(check (option id_testable)) "id" (Some (Int 7)) inbound.id
+  | Error e -> Alcotest.fail e
+
+let test_inbound_of_notification () =
+  let json = `Assoc [
+    ("jsonrpc", `String "2.0");
+    ("method", `String "notifications/initialized");
+  ] in
+  match Jsonrpc.inbound_of_yojson json with
+  | Ok inbound ->
+      Alcotest.(check (option id_testable)) "notification has no id" None inbound.id;
+      Alcotest.(check string) "method" "notifications/initialized" inbound.method_
+  | Error e -> Alcotest.fail e
+
+let test_inbound_rejects_response () =
+  let json = `Assoc [
+    ("jsonrpc", `String "2.0");
+    ("id", `Int 1);
+    ("result", `Assoc []);
+  ] in
+  Alcotest.(check bool) "response rejected"
+    true
+    (Result.is_error (Jsonrpc.inbound_of_yojson json))
+
+(* --- wire json helpers --- *)
+
+let test_make_request_json () =
+  let json = Jsonrpc.make_request_json ~id:(Int 1) ~method_:"tools/list" () in
+  check_jsonrpc_field "request helper jsonrpc" json
+
+let test_make_notification_json () =
+  let json = Jsonrpc.make_notification_json ~method_:"notifications/initialized" () in
+  check_jsonrpc_field "notification helper jsonrpc" json
+
+let test_make_response_json () =
+  let json = Jsonrpc.make_response_json ~id:(Int 1) ~result:(`Assoc []) in
+  check_jsonrpc_field "response helper jsonrpc" json
+
+let test_make_error_json () =
+  let json = Jsonrpc.make_error_json ~id:(Int 1) ~code:(-32601) ~message:"Not found" () in
+  check_jsonrpc_field "error helper jsonrpc" json
 
 (* --- Suite --- *)
 
@@ -262,5 +327,16 @@ let () =
     "message_of_string", [
       Alcotest.test_case "valid" `Quick test_message_of_string_valid;
       Alcotest.test_case "invalid json" `Quick test_message_of_string_invalid_json;
+    ];
+    "inbound", [
+      Alcotest.test_case "request" `Quick test_inbound_of_request;
+      Alcotest.test_case "notification" `Quick test_inbound_of_notification;
+      Alcotest.test_case "reject response" `Quick test_inbound_rejects_response;
+    ];
+    "wire_json_helpers", [
+      Alcotest.test_case "request json" `Quick test_make_request_json;
+      Alcotest.test_case "notification json" `Quick test_make_notification_json;
+      Alcotest.test_case "response json" `Quick test_make_response_json;
+      Alcotest.test_case "error json" `Quick test_make_error_json;
     ];
   ]

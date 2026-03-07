@@ -79,3 +79,15 @@ let make_response = Jsonrpc.make_response
 
 (** Make a JSON-RPC error response *)
 let make_error = Jsonrpc.make_error
+
+(** Emit JSON-RPC request JSON directly *)
+let make_request_json = Jsonrpc.make_request_json
+
+(** Emit JSON-RPC notification JSON directly *)
+let make_notification_json = Jsonrpc.make_notification_json
+
+(** Emit JSON-RPC success response JSON directly *)
+let make_response_json = Jsonrpc.make_response_json
+
+(** Emit JSON-RPC error response JSON directly *)
+let make_error_json = Jsonrpc.make_error_json

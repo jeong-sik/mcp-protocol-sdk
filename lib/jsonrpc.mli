@@ -81,12 +81,29 @@ type message =
 val message_of_yojson : Yojson.Safe.t -> (message, string) result
 val message_to_yojson : message -> Yojson.Safe.t
 
+(** Normalized inbound JSON-RPC message.
+    Represents only requests and notifications, which is the common shape used
+    by MCP server adapters. [id = None] means "notification". *)
+type inbound = {
+  jsonrpc: string;
+  id: id option;
+  method_: string;
+  params: Yojson.Safe.t option;
+}
+
+val inbound_of_yojson : Yojson.Safe.t -> (inbound, string) result
+val inbound_of_string : string -> (inbound, string) result
+
 (** {2 Constructors} *)
 
 val make_request : id:id -> method_:string -> ?params:Yojson.Safe.t -> unit -> message
 val make_notification : method_:string -> ?params:Yojson.Safe.t -> unit -> message
 val make_response : id:id -> result:Yojson.Safe.t -> message
 val make_error : id:id -> code:int -> message:string -> ?data:Yojson.Safe.t -> unit -> message
+val make_request_json : id:id -> method_:string -> ?params:Yojson.Safe.t -> unit -> Yojson.Safe.t
+val make_notification_json : method_:string -> ?params:Yojson.Safe.t -> unit -> Yojson.Safe.t
+val make_response_json : id:id -> result:Yojson.Safe.t -> Yojson.Safe.t
+val make_error_json : id:id -> code:int -> message:string -> ?data:Yojson.Safe.t -> unit -> Yojson.Safe.t
 
 (** {2 Request ID} *)
 
