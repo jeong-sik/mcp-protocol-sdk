@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-08
+
+### Added
+- **`mcp_protocol_http` package**: Streamable HTTP transport for MCP.
+  - `Sse` module: SSE event encoding/parsing and `Broadcaster` (Eio.Stream-based).
+  - `Http_session` module: session ID generation (/dev/urandom 128-bit hex), state machine, header validation.
+  - `Http_server` module: POST/GET/DELETE/OPTIONS routing, `Mcp-Session-Id` management, CORS support.
+    - Builder API: `create ~name ~version () |> add_tool ... |> add_resource ...`
+    - `callback` function for integration with `Cohttp_eio.Server`.
+  - `Http_client` module: typed API matching `Client` (initialize, ping, list/call tools, resources, prompts, close).
+    - Per-request `Eio.Switch` pattern for correct cohttp-eio resource cleanup.
+    - Automatic `Mcp-Session-Id` header management.
+- Transport-agnostic `Handler` module extracted from `Server` (shared by stdio and HTTP servers).
+- 7 HTTP integration tests (multi-tool, multi-resource, close-reuse, large payload, sequential, full e2e).
+- `http_echo_server` and `http_echo_client` examples.
+- 79 new tests (373 total, up from 294 in v0.8.0).
+
 ## [0.8.0] - 2026-03-08
 
 ### Added
@@ -166,6 +183,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Http_negotiation` module: Accept header parsing, transport negotiation.
 - `Version` module: protocol version handling and negotiation.
 
+[0.9.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.5.0...v0.6.0
