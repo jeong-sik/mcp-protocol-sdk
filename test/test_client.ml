@@ -24,6 +24,27 @@ let run_client_test responses fn =
   in
   (result, sent)
 
+(** Like [run_client_test] but applies [setup] to the client before [fn].
+    Use to register handlers via [on_sampling], [on_roots_list], etc. *)
+let run_client_test_with responses ?(setup = Fun.id) fn =
+  Eio_main.run @@ fun _env ->
+  let input_str =
+    String.concat "\n" (List.map Yojson.Safe.to_string responses) ^ "\n"
+  in
+  let source = Eio.Flow.string_source input_str in
+  let buf = Buffer.create 1024 in
+  let sink = Eio.Flow.buffer_sink buf in
+  let client = Mcp_protocol_eio.Client.create ~stdin:source ~stdout:sink in
+  let client = setup client in
+  let result = fn client in
+  let output = Buffer.contents buf in
+  let sent =
+    String.split_on_char '\n' output
+    |> List.filter (fun s -> String.length (String.trim s) > 0)
+    |> List.map Yojson.Safe.from_string
+  in
+  (result, sent)
+
 let get_field key = function
   | `Assoc fields -> List.assoc_opt key fields
   | _ -> None
@@ -372,6 +393,273 @@ let test_get_prompt_no_arguments () =
     end
   | None -> Alcotest.fail "Missing params"
 
+(* ── mock server requests (server → client) ─────────── *)
+
+let make_sampling_request ?(id = 99) () =
+  `Assoc [
+    ("jsonrpc", `String "2.0");
+    ("id", `Int id);
+    ("method", `String "sampling/createMessage");
+    ("params", `Assoc [
+      ("messages", `List [
+        `Assoc [
+          ("role", `String "user");
+          ("content", `Assoc [
+            ("type", `String "text");
+            ("text", `String "Hello");
+          ]);
+        ];
+      ]);
+      ("maxTokens", `Int 100);
+    ]);
+  ]
+
+let make_roots_request ?(id = 88) () =
+  `Assoc [
+    ("jsonrpc", `String "2.0");
+    ("id", `Int id);
+    ("method", `String "roots/list");
+  ]
+
+let make_elicitation_request ?(id = 77) () =
+  `Assoc [
+    ("jsonrpc", `String "2.0");
+    ("id", `Int id);
+    ("method", `String "elicitation/create");
+    ("params", `Assoc [
+      ("message", `String "Confirm?");
+    ]);
+  ]
+
+let make_server_notification ?(method_ = "notifications/message") ?params () =
+  let fields = [
+    ("jsonrpc", `String "2.0");
+    ("method", `String method_);
+  ] in
+  let fields = match params with
+    | Some p -> fields @ [("params", p)]
+    | None -> fields
+  in
+  `Assoc fields
+
+(* ── callback dispatch tests ────────────────────────── *)
+
+let test_sampling_callback () =
+  let handler_called = ref false in
+  let setup client =
+    Mcp_protocol_eio.Client.on_sampling (fun params ->
+      handler_called := true;
+      Alcotest.(check int) "max_tokens" 100 params.max_tokens;
+      Ok Sampling.{
+        role = Assistant;
+        content = Text { type_ = "text"; text = "Reply" };
+        model = "test-model";
+        stop_reason = Some "endTurn";
+      }
+    ) client
+  in
+  let responses = [make_sampling_request (); make_pong ()] in
+  let (result, sent) = run_client_test_with responses ~setup (fun client ->
+    Mcp_protocol_eio.Client.ping client
+  ) in
+  Alcotest.(check bool) "handler called" true !handler_called;
+  Alcotest.(check bool) "ping ok" true (Result.is_ok result);
+  (* sent: ping request + sampling response *)
+  Alcotest.(check int) "2 messages sent" 2 (List.length sent);
+  let sampling_resp = List.nth sent 1 in
+  let resp_result = get_field "result" sampling_resp in
+  (match resp_result with
+   | Some r ->
+     Alcotest.(check string) "model" "test-model" (get_string "model" r)
+   | None -> Alcotest.fail "Missing result in sampling response")
+
+let test_roots_callback () =
+  let setup client =
+    Mcp_protocol_eio.Client.on_roots_list (fun () ->
+      Ok [
+        Mcp_types.{ uri = "file:///project"; name = Some "project" };
+        Mcp_types.{ uri = "file:///home"; name = None };
+      ]
+    ) client
+  in
+  let responses = [make_roots_request (); make_pong ()] in
+  let (result, sent) = run_client_test_with responses ~setup (fun client ->
+    Mcp_protocol_eio.Client.ping client
+  ) in
+  Alcotest.(check bool) "ping ok" true (Result.is_ok result);
+  Alcotest.(check int) "2 messages sent" 2 (List.length sent);
+  let roots_resp = List.nth sent 1 in
+  let resp_result = get_field "result" roots_resp in
+  (match resp_result with
+   | Some r ->
+     (match get_field "roots" r with
+      | Some (`List roots) ->
+        Alcotest.(check int) "2 roots" 2 (List.length roots);
+        Alcotest.(check string) "first uri" "file:///project"
+          (get_string "uri" (List.nth roots 0))
+      | _ -> Alcotest.fail "Missing roots array")
+   | None -> Alcotest.fail "Missing result in roots response")
+
+let test_elicitation_callback () =
+  let setup client =
+    Mcp_protocol_eio.Client.on_elicitation (fun params ->
+      Alcotest.(check string) "message" "Confirm?" params.message;
+      Ok Mcp_types.{ action = Accept; content = None }
+    ) client
+  in
+  let responses = [make_elicitation_request (); make_pong ()] in
+  let (result, sent) = run_client_test_with responses ~setup (fun client ->
+    Mcp_protocol_eio.Client.ping client
+  ) in
+  Alcotest.(check bool) "ping ok" true (Result.is_ok result);
+  Alcotest.(check int) "2 messages sent" 2 (List.length sent);
+  let elic_resp = List.nth sent 1 in
+  let resp_result = get_field "result" elic_resp in
+  (match resp_result with
+   | Some r ->
+     Alcotest.(check string) "action" "accept" (get_string "action" r)
+   | None -> Alcotest.fail "Missing result in elicitation response")
+
+let test_unregistered_sampling () =
+  (* No sampling handler — should get method_not_found error back *)
+  let responses = [make_sampling_request (); make_pong ()] in
+  let (result, sent) = run_client_test responses (fun client ->
+    Mcp_protocol_eio.Client.ping client
+  ) in
+  Alcotest.(check bool) "ping ok" true (Result.is_ok result);
+  Alcotest.(check int) "2 messages sent" 2 (List.length sent);
+  let err_resp = List.nth sent 1 in
+  let err = get_field "error" err_resp in
+  (match err with
+   | Some e ->
+     Alcotest.(check (option int)) "error code" (Some (-32601)) (get_int "code" e)
+   | None -> Alcotest.fail "Expected error response for unregistered sampling")
+
+let test_unregistered_roots () =
+  (* No roots handler — should get method_not_found error back *)
+  let responses = [make_roots_request (); make_pong ()] in
+  let (result, sent) = run_client_test responses (fun client ->
+    Mcp_protocol_eio.Client.ping client
+  ) in
+  Alcotest.(check bool) "ping ok" true (Result.is_ok result);
+  Alcotest.(check int) "2 messages sent" 2 (List.length sent);
+  let err_resp = List.nth sent 1 in
+  let err = get_field "error" err_resp in
+  (match err with
+   | Some e ->
+     Alcotest.(check (option int)) "error code" (Some (-32601)) (get_int "code" e)
+   | None -> Alcotest.fail "Expected error response for unregistered roots")
+
+let test_notification_callback () =
+  let received_method = ref "" in
+  let received_params = ref `Null in
+  let notif_params = `Assoc [("level", `String "info"); ("data", `String "test")] in
+  let setup client =
+    Mcp_protocol_eio.Client.on_notification (fun method_ params ->
+      received_method := method_;
+      received_params := (match params with Some p -> p | None -> `Null)
+    ) client
+  in
+  let responses = [
+    make_server_notification ~params:notif_params ();
+    make_pong ();
+  ] in
+  let (result, _) = run_client_test_with responses ~setup (fun client ->
+    Mcp_protocol_eio.Client.ping client
+  ) in
+  Alcotest.(check bool) "ping ok" true (Result.is_ok result);
+  Alcotest.(check string) "notif method" "notifications/message" !received_method;
+  Alcotest.(check string) "notif data"
+    (Yojson.Safe.to_string notif_params)
+    (Yojson.Safe.to_string !received_params)
+
+let test_notification_no_callback () =
+  (* No notification handler — notification should be silently ignored *)
+  let responses = [make_notification (); make_pong ()] in
+  let (result, _) = run_client_test responses (fun client ->
+    Mcp_protocol_eio.Client.ping client
+  ) in
+  Alcotest.(check bool) "ping ok despite ignored notification" true (Result.is_ok result)
+
+let test_request_interleaved_with_response () =
+  let handler_called = ref false in
+  let setup client =
+    Mcp_protocol_eio.Client.on_sampling (fun _params ->
+      handler_called := true;
+      Ok Sampling.{
+        role = Assistant;
+        content = Text { type_ = "text"; text = "LLM reply" };
+        model = "interleaved-model";
+        stop_reason = None;
+      }
+    ) client
+  in
+  (* Server sends: sampling request, then tools/list response *)
+  let responses = [
+    make_sampling_request ~id:99 ();
+    make_tools_list_response ~id:1 ();
+  ] in
+  let (result, sent) = run_client_test_with responses ~setup (fun client ->
+    Mcp_protocol_eio.Client.list_tools client
+  ) in
+  Alcotest.(check bool) "handler called" true !handler_called;
+  (match result with
+   | Ok tools ->
+     Alcotest.(check int) "1 tool" 1 (List.length tools);
+     Alcotest.(check string) "tool name" "echo" (List.nth tools 0).name
+   | Error e -> Alcotest.fail e);
+  (* sent: list_tools request + sampling response *)
+  Alcotest.(check int) "2 messages sent" 2 (List.length sent)
+
+let test_capabilities_advertised () =
+  let setup client =
+    client
+    |> Mcp_protocol_eio.Client.on_sampling (fun _params ->
+         Error "unused")
+    |> Mcp_protocol_eio.Client.on_roots_list (fun () ->
+         Error "unused")
+    |> Mcp_protocol_eio.Client.on_elicitation (fun _params ->
+         Error "unused")
+  in
+  let responses = [make_init_response ()] in
+  let (result, sent) = run_client_test_with responses ~setup (fun client ->
+    Mcp_protocol_eio.Client.initialize client ~client_name:"test" ~client_version:"1.0"
+  ) in
+  Alcotest.(check bool) "init ok" true (Result.is_ok result);
+  (* Check the initialize request params for capabilities *)
+  let init_req = List.nth sent 0 in
+  let params = get_field "params" init_req in
+  (match params with
+   | Some p ->
+     let caps = get_field "capabilities" p in
+     (match caps with
+      | Some (`Assoc fields) ->
+        Alcotest.(check bool) "has sampling" true
+          (List.mem_assoc "sampling" fields);
+        Alcotest.(check bool) "has roots" true
+          (List.mem_assoc "roots" fields);
+        Alcotest.(check bool) "has elicitation" true
+          (List.mem_assoc "elicitation" fields)
+      | _ -> Alcotest.fail "Missing capabilities object")
+   | None -> Alcotest.fail "Missing params")
+
+let test_capabilities_empty () =
+  (* No handlers registered — capabilities should be empty *)
+  let responses = [make_init_response ()] in
+  let (_, sent) = run_client_test responses (fun client ->
+    Mcp_protocol_eio.Client.initialize client ~client_name:"test" ~client_version:"1.0"
+  ) in
+  let init_req = List.nth sent 0 in
+  let params = get_field "params" init_req in
+  (match params with
+   | Some p ->
+     let caps = get_field "capabilities" p in
+     (match caps with
+      | Some (`Assoc fields) ->
+        Alcotest.(check int) "empty capabilities" 0 (List.length fields)
+      | _ -> Alcotest.fail "Missing capabilities object")
+   | None -> Alcotest.fail "Missing params")
+
 (* ── test suite ──────────────────────────────────────── *)
 
 let () =
@@ -404,5 +692,19 @@ let () =
     ];
     "request ids", [
       Alcotest.test_case "increment" `Quick test_id_increment;
+    ];
+    "callback dispatch", [
+      Alcotest.test_case "sampling callback" `Quick test_sampling_callback;
+      Alcotest.test_case "roots callback" `Quick test_roots_callback;
+      Alcotest.test_case "elicitation callback" `Quick test_elicitation_callback;
+      Alcotest.test_case "unregistered sampling" `Quick test_unregistered_sampling;
+      Alcotest.test_case "unregistered roots" `Quick test_unregistered_roots;
+      Alcotest.test_case "notification callback" `Quick test_notification_callback;
+      Alcotest.test_case "notification no callback" `Quick test_notification_no_callback;
+      Alcotest.test_case "interleaved request" `Quick test_request_interleaved_with_response;
+    ];
+    "capabilities", [
+      Alcotest.test_case "advertised" `Quick test_capabilities_advertised;
+      Alcotest.test_case "empty" `Quick test_capabilities_empty;
     ];
   ]
