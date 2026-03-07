@@ -28,16 +28,27 @@ let create () = {
 let generate_session_id () =
   let len = 16 in
   let buf = Bytes.create len in
-  let fd = Unix.openfile "/dev/urandom" [Unix.O_RDONLY] 0 in
-  Fun.protect ~finally:(fun () -> Unix.close fd) (fun () ->
-    let rec loop off =
-      if off < len then begin
-        let n = Unix.read fd buf off (len - off) in
-        if n <= 0 then failwith "generate_session_id: /dev/urandom short read";
-        loop (off + n)
-      end
-    in
-    loop 0);
+  let read_urandom () =
+    let fd = Unix.openfile "/dev/urandom" [Unix.O_RDONLY] 0 in
+    Fun.protect ~finally:(fun () -> Unix.close fd) (fun () ->
+      let rec loop off =
+        if off < len then begin
+          let n = Unix.read fd buf off (len - off) in
+          if n <= 0 then failwith "generate_session_id: /dev/urandom short read";
+          loop (off + n)
+        end
+      in
+      loop 0)
+  in
+  let fallback_random () =
+    Printf.eprintf "Warning: /dev/urandom unavailable, using Random for session ID\n%!";
+    Random.self_init ();
+    for i = 0 to len - 1 do
+      Bytes.set buf i (Char.chr (Random.int 256))
+    done
+  in
+  (try read_urandom ()
+   with Unix.Unix_error _ | Sys_error _ -> fallback_random ());
   Bytes.to_seq buf
   |> Seq.map (fun c -> Printf.sprintf "%02x" (Char.code c))
   |> List.of_seq |> String.concat ""

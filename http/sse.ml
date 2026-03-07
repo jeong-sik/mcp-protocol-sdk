@@ -42,6 +42,13 @@ let encode e =
 
 (* ── Parsing ─────────────────────────────────── *)
 
+let starts_with ~prefix s =
+  String.length s >= String.length prefix &&
+  String.sub s 0 (String.length prefix) = prefix
+
+let strip_prefix ~prefix s =
+  String.sub s (String.length prefix) (String.length s - String.length prefix)
+
 let parse_event s =
   let lines = String.split_on_char '\n' s in
   let event_type = ref None in
@@ -49,14 +56,14 @@ let parse_event s =
   let id = ref None in
   let retry = ref None in
   List.iter (fun line ->
-    if String.length line >= 6 && String.sub line 0 6 = "data: " then
-      data_lines := String.sub line 6 (String.length line - 6) :: !data_lines
-    else if String.length line >= 7 && String.sub line 0 7 = "event: " then
-      event_type := Some (String.sub line 7 (String.length line - 7))
-    else if String.length line >= 4 && String.sub line 0 4 = "id: " then
-      id := Some (String.sub line 4 (String.length line - 4))
-    else if String.length line >= 7 && String.sub line 0 7 = "retry: " then
-      let v = String.sub line 7 (String.length line - 7) in
+    if starts_with ~prefix:"data: " line then
+      data_lines := strip_prefix ~prefix:"data: " line :: !data_lines
+    else if starts_with ~prefix:"event: " line then
+      event_type := Some (strip_prefix ~prefix:"event: " line)
+    else if starts_with ~prefix:"id: " line then
+      id := Some (strip_prefix ~prefix:"id: " line)
+    else if starts_with ~prefix:"retry: " line then
+      let v = strip_prefix ~prefix:"retry: " line in
       (try retry := Some (int_of_string v) with Failure _ -> ())
   ) lines;
   match !data_lines with
