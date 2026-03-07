@@ -23,7 +23,7 @@ open Mcp_protocol
     Passed to every handler at runtime. Provides the ability to send
     notifications (logging, progress) back to the client during request handling. *)
 
-type context = {
+type context = Handler.context = {
   send_notification : method_:string -> params:Yojson.Safe.t option -> (unit, string) result;
   (** Send a raw JSON-RPC notification to the client. *)
   send_log : Logging.log_level -> string -> (unit, string) result;

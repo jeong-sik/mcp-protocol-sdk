@@ -1,0 +1,76 @@
+(** Transport-agnostic MCP request handler.
+
+    Provides handler registration and dispatch logic shared by
+    both stdio and HTTP transports.
+
+    Usage:
+    {[
+      let h =
+        Handler.create ~name:"my-server" ~version:"1.0.0" ()
+        |> Handler.add_tool echo_tool (fun _ctx _name args -> Ok result)
+        |> Handler.add_resource res (fun _ctx uri -> Ok [contents])
+      in
+      (* Use h in Server.run or Http_server.run *)
+    ]}
+*)
+
+open Mcp_protocol
+
+(** {2 Handler Context}
+
+    Passed to every handler at runtime. Provides the ability to send
+    notifications (logging, progress) back to the client during request handling. *)
+
+type context = {
+  send_notification : method_:string -> params:Yojson.Safe.t option -> (unit, string) result;
+  (** Send a raw JSON-RPC notification to the client. *)
+  send_log : Logging.log_level -> string -> (unit, string) result;
+  (** Send a logging/message notification. Only sent if the level
+      is at or above the current log level set by the client. *)
+  send_progress : token:Mcp_result.progress_token -> progress:float -> total:float option -> (unit, string) result;
+  (** Send a progress notification for a long-running operation. *)
+  request_sampling : Sampling.create_message_params -> (Sampling.create_message_result, string) result;
+  (** Send a [sampling/createMessage] request to the client and wait for the response. *)
+  request_roots_list : unit -> (Mcp_types.root list, string) result;
+  (** Send a [roots/list] request to the client and wait for the response. *)
+  request_elicitation : Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result;
+  (** Send an [elicitation/create] request to the client and wait for the response. *)
+}
+
+(** {2 Handler Types} *)
+
+type tool_handler = context -> string -> Yojson.Safe.t option -> (Mcp_types.tool_result, string) result
+type resource_handler = context -> string -> (Mcp_types.resource_contents list, string) result
+type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.prompt_result, string) result
+type completion_handler =
+  Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
+
+(** {2 Handler Registry} *)
+
+type t
+
+val create : name:string -> version:string -> ?instructions:string -> unit -> t
+val add_tool : Mcp_types.tool -> tool_handler -> t -> t
+val add_resource : Mcp_types.resource -> resource_handler -> t -> t
+val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
+val add_completion_handler : completion_handler -> t -> t
+
+(** {2 Accessors} *)
+
+val name : t -> string
+val version : t -> string
+val instructions : t -> string option
+val tools : t -> Mcp_types.tool list
+val resources : t -> Mcp_types.resource list
+val prompts : t -> Mcp_types.prompt list
+
+(** {2 Capabilities} *)
+
+val server_capabilities : t -> Mcp_types.server_capabilities
+
+(** {2 Dispatch}
+
+    Process an incoming JSON-RPC message and return an optional response.
+    The [log_level_ref] is updated by logging/setLevel requests. *)
+
+val dispatch : t -> context -> Logging.log_level ref -> Jsonrpc.message -> Jsonrpc.message option
