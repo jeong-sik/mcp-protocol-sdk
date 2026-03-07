@@ -22,7 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transport-agnostic `Handler` module extracted from `Server` (shared by stdio and HTTP servers).
 - 7 HTTP integration tests (multi-tool, multi-resource, close-reuse, large payload, sequential, full e2e).
 - `http_echo_server` and `http_echo_client` examples.
-- 79 new tests (373 total, up from 294 in v0.8.0).
+- HTTP client: callback registration (`on_sampling`, `on_roots_list`, `on_elicitation`), timeout with cancellation notification, capability advertisement during initialize.
+- Pagination: `?cursor` parameter on all `list_tools`, `list_resources`, `list_prompts` APIs (stdio + HTTP clients).
+- Resource subscription: `subscribe_resource` and `unsubscribe_resource` on both clients; server handler tracks subscribed URIs and advertises `subscribe` capability.
+- `resources.mli` interface file for backward compat module.
+- 79 new tests (327 total, up from 294 in v0.8.0).
+
+### Fixed
+- `protocol.ml`: narrowed 5 bare `with _` exception handlers to `Type_error _` / `Json_error _` (prevented swallowing `Out_of_memory`/`Stack_overflow`).
+- `eio/client.ml`: added `Out_of_memory`/`Stack_overflow` guard to notification handler exception path.
+- HTTP server: CORS headers now included on all responses (POST/GET/DELETE), not just OPTIONS preflight.
+- HTTP server: request body size limit returns 413 instead of unhandled exception.
 
 ## [0.8.0] - 2026-03-08
 
