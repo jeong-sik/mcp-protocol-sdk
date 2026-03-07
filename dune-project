@@ -2,7 +2,7 @@
 
 (name mcp_protocol)
 
-(version 0.8.0)
+(version 0.9.0)
 
 (generate_opam_files true)
 
@@ -44,3 +44,20 @@ Provides NDJSON over stdin/stdout transport and a minimal server framework.")
   (yojson (>= 2.0))
   (alcotest :with-test)
   (eio :with-test)))
+
+(package
+ (name mcp_protocol_http)
+ (synopsis "HTTP transport for MCP Protocol SDK (Streamable HTTP)")
+ (description
+  "HTTP transport for the Model Context Protocol using Streamable HTTP.
+Provides SSE encoding/broadcasting, session management, and HTTP server/client.")
+ (depends
+  (ocaml (>= 5.1))
+  (dune (>= 3.0))
+  (mcp_protocol (= :version))
+  (mcp_protocol_eio (= :version))
+  (eio (>= 1.0))
+  (cohttp-eio (>= 6.0))
+  (yojson (>= 2.0))
+  (alcotest :with-test)
+  (eio_main :with-test)))

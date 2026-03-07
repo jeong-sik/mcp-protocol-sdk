@@ -8,7 +8,8 @@ MCP enables LLMs to interact with external tools, resources, and prompts through
 
 - **JSON-RPC 2.0** types and utilities for wire protocol
 - **MCP Primitives** (Tools, Resources, Prompts)
-- **HTTP Negotiation** for content type handling
+- **Stdio Transport** (`mcp_protocol_eio`) — NDJSON over stdin/stdout
+- **HTTP Transport** (`mcp_protocol_http`) — Streamable HTTP with SSE, sessions, cohttp-eio
 - **Protocol Versioning** with negotiation support
 
 Setup 가이드: `docs/SETUP.md`  
@@ -29,7 +30,9 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 0.3.0)))
+ (mcp_protocol (>= 0.9.0))
+ (mcp_protocol_eio (>= 0.9.0))   ;; for stdio transport
+ (mcp_protocol_http (>= 0.9.0))) ;; for HTTP transport
 ```
 
 ## Docs
@@ -121,6 +124,67 @@ let my_prompt : Mcp_types.prompt = {
     { name = "language"; description = Some "Programming language"; required = Some false };
   ];
 }
+```
+
+### HTTP Server (Streamable HTTP)
+
+```ocaml
+open Mcp_protocol
+open Mcp_protocol_http
+
+let echo_tool = Mcp_types.make_tool
+  ~name:"echo"
+  ~description:"Echoes back the input text"
+  ~input_schema:(`Assoc [
+    ("type", `String "object");
+    ("properties", `Assoc [
+      ("text", `Assoc [("type", `String "string")])
+    ]);
+    ("required", `List [`String "text"])
+  ]) ()
+
+let echo_handler _ctx _name arguments =
+  let text = match arguments with
+    | Some (`Assoc args) ->
+      (match List.assoc_opt "text" args with
+       | Some (`String s) -> s
+       | _ -> "(no text)")
+    | _ -> "(no arguments)"
+  in
+  Ok (Mcp_types.tool_result_of_text (Printf.sprintf "Echo: %s" text))
+
+let () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let server =
+    Http_server.create ~name:"my-server" ~version:"1.0.0" ()
+    |> Http_server.add_tool echo_tool echo_handler
+  in
+  let net = Eio.Stdenv.net env in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080) in
+  let socket = Eio.Net.listen ~sw net addr ~backlog:128 in
+  Cohttp_eio.Server.run socket
+    (Cohttp_eio.Server.make
+       ~callback:(Http_server.callback server) ())
+    ~on_error:(fun exn -> Printf.eprintf "%s\n" (Printexc.to_string exn))
+```
+
+### HTTP Client
+
+```ocaml
+open Mcp_protocol_http
+
+let () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let client = Http_client.create ~endpoint:"http://127.0.0.1:8080/mcp" ~net ~sw () in
+  match Http_client.initialize client ~client_name:"my-client" ~client_version:"1.0" with
+  | Ok result ->
+    Printf.printf "Connected to %s\n" result.server_info.name;
+    (* Use list_tools, call_tool, list_resources, etc. *)
+    ignore (Http_client.close client)
+  | Error e -> Printf.eprintf "Failed: %s\n" e
 ```
 
 ### HTTP Content Negotiation

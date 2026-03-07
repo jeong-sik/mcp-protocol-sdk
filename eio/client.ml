@@ -199,7 +199,9 @@ let read_response t expected_id =
           (match t.notification_handler with
            | Some handler ->
              (try handler notif.method_ notif.params
-              with exn ->
+              with
+              | Out_of_memory | Stack_overflow as exn -> raise exn
+              | exn ->
                 Printf.eprintf "Client: notification handler raised: %s\n%!"
                   (Printexc.to_string exn))
            | None -> ());
@@ -297,8 +299,12 @@ let ping t =
 
 (* ── tools ────────────────────────────────────────── *)
 
-let list_tools t =
-  match send_request t ~method_:Notifications.tools_list () with
+let list_tools ?cursor t =
+  let params = match cursor with
+    | Some c -> Some (`Assoc [("cursor", `String c)])
+    | None -> None
+  in
+  match send_request t ~method_:Notifications.tools_list ?params () with
   | Error e -> Error e
   | Ok result -> parse_list_field "tools" Mcp_types.tool_of_yojson result
 
@@ -315,8 +321,12 @@ let call_tool t ~name ?arguments () =
 
 (* ── resources ────────────────────────────────────── *)
 
-let list_resources t =
-  match send_request t ~method_:Notifications.resources_list () with
+let list_resources ?cursor t =
+  let params = match cursor with
+    | Some c -> Some (`Assoc [("cursor", `String c)])
+    | None -> None
+  in
+  match send_request t ~method_:Notifications.resources_list ?params () with
   | Error e -> Error e
   | Ok result -> parse_list_field "resources" Mcp_types.resource_of_yojson result
 
@@ -326,10 +336,26 @@ let read_resource t ~uri =
   | Error e -> Error e
   | Ok result -> parse_list_field "contents" Mcp_types.resource_contents_of_yojson result
 
+let subscribe_resource t ~uri =
+  let params = `Assoc [("uri", `String uri)] in
+  match send_request t ~method_:Notifications.resources_subscribe ~params () with
+  | Error e -> Error e
+  | Ok _ -> Ok ()
+
+let unsubscribe_resource t ~uri =
+  let params = `Assoc [("uri", `String uri)] in
+  match send_request t ~method_:Notifications.resources_unsubscribe ~params () with
+  | Error e -> Error e
+  | Ok _ -> Ok ()
+
 (* ── prompts ──────────────────────────────────────── *)
 
-let list_prompts t =
-  match send_request t ~method_:Notifications.prompts_list () with
+let list_prompts ?cursor t =
+  let params = match cursor with
+    | Some c -> Some (`Assoc [("cursor", `String c)])
+    | None -> None
+  in
+  match send_request t ~method_:Notifications.prompts_list ?params () with
   | Error e -> Error e
   | Ok result -> parse_list_field "prompts" Mcp_types.prompt_of_yojson result
 

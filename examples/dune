@@ -9,3 +9,15 @@
  (public_name mcp_echo_client)
  (package mcp_protocol_eio)
  (libraries mcp_protocol mcp_protocol_eio eio_main eio.unix yojson))
+
+(executable
+ (name http_echo_server)
+ (public_name mcp_http_echo_server)
+ (package mcp_protocol_http)
+ (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson))
+
+(executable
+ (name http_echo_client)
+ (public_name mcp_http_echo_client)
+ (package mcp_protocol_http)
+ (libraries mcp_protocol mcp_protocol_http eio eio.unix eio_main cohttp-eio yojson))

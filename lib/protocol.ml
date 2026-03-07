@@ -41,23 +41,28 @@ end
 
 let get_string key json =
   let open Yojson.Safe.Util in
-  try Some (json |> member key |> to_string) with _ -> None
+  try Some (json |> member key |> to_string)
+  with Type_error _ -> None
 
 let get_int key json =
   let open Yojson.Safe.Util in
-  try Some (json |> member key |> to_int) with _ -> None
+  try Some (json |> member key |> to_int)
+  with Type_error _ -> None
 
 let get_bool key json =
   let open Yojson.Safe.Util in
-  try Some (json |> member key |> to_bool) with _ -> None
+  try Some (json |> member key |> to_bool)
+  with Type_error _ -> None
 
 let get_string_list key json =
   let open Yojson.Safe.Util in
   try
     Some (json |> member key |> to_list |> List.map to_string)
-  with _ ->
+  with Type_error _ ->
     match get_string key json with
-    | Some s -> (try Some (Yojson.Safe.from_string s |> to_list |> List.map to_string) with _ -> None)
+    | Some s ->
+      (try Some (Yojson.Safe.from_string s |> to_list |> List.map to_string)
+       with Type_error _ | Yojson.Json_error _ -> None)
     | None -> None
 
 let text_content text =
