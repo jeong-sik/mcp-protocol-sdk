@@ -186,7 +186,9 @@ let read_response t expected_id =
             (match t.notification_handler with
              | Some handler ->
                (try handler notif.method_ notif.params
-                with exn ->
+                with
+                | Out_of_memory | Stack_overflow as exn -> raise exn
+                | exn ->
                   Printf.eprintf "Client: notification handler raised: %s\n%!"
                     (Printexc.to_string exn))
              | None -> ());

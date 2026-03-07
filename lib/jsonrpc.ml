@@ -136,6 +136,7 @@ let message_of_yojson json =
     Error (Printf.sprintf "JSON-RPC parse error: %s" msg)
   | Yojson.Json_error msg ->
     Error (Printf.sprintf "JSON parse error: %s" msg)
+  | Out_of_memory | Stack_overflow as exn -> raise exn
   | exn ->
     Error (Printf.sprintf "Unexpected parse error: %s" (Printexc.to_string exn))
 
