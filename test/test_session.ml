@@ -97,7 +97,7 @@ let test_tracker_cancel_all_sets_error_state () =
      | _ -> Alcotest.fail "expected Error state")
   | _ -> Alcotest.fail "expected exactly one cancelled request"
 
-(* --- Session lifecycle --- *)
+(* --- Session lifecycle (immutable API) --- *)
 
 let test_lifecycle_to_string () =
   Alcotest.(check string) "created" "created"
@@ -122,15 +122,15 @@ let test_create_session () =
 
 let test_session_ready () =
   let s = Session.create_session ~id:"test-2" ~protocol_version:"2025-03-26" () in
-  Session.session_ready s;
+  let s = Session.session_ready s in
   Alcotest.(check string) "lifecycle" "ready"
     (Session.lifecycle_to_string s.lifecycle);
   Alcotest.(check bool) "initialized_at set" true (Option.is_some s.initialized_at)
 
 let test_session_close () =
   let s = Session.create_session ~id:"test-3" ~protocol_version:"2025-03-26" () in
-  Session.session_ready s;
-  Session.session_close s;
+  let s = Session.session_ready s in
+  let s = Session.session_close s in
   Alcotest.(check string) "lifecycle" "closed"
     (Session.lifecycle_to_string s.lifecycle);
   Alcotest.(check bool) "closed_at set" true (Option.is_some s.closed_at)
@@ -142,6 +142,23 @@ let test_session_with_info () =
     ~server_info:si ~client_info:ci () in
   Alcotest.(check bool) "has server_info" true (Option.is_some s.server_info);
   Alcotest.(check bool) "has client_info" true (Option.is_some s.client_info)
+
+let test_session_ready_preserves_id () =
+  let s = Session.create_session ~id:"preserve-1" ~protocol_version:"2025-11-25" () in
+  let s' = Session.session_ready s in
+  Alcotest.(check string) "id preserved" "preserve-1" s'.id;
+  Alcotest.(check string) "version preserved" "2025-11-25" s'.protocol_version;
+  Alcotest.(check string) "original unchanged" "created"
+    (Session.lifecycle_to_string s.lifecycle)
+
+let test_session_close_preserves_ready () =
+  let s = Session.create_session ~id:"preserve-2" ~protocol_version:"2025-11-25" () in
+  let s = Session.session_ready s in
+  let s' = Session.session_close s in
+  Alcotest.(check bool) "initialized_at still set" true (Option.is_some s'.initialized_at);
+  Alcotest.(check bool) "closed_at set" true (Option.is_some s'.closed_at);
+  Alcotest.(check string) "ready session unchanged" "ready"
+    (Session.lifecycle_to_string s.lifecycle)
 
 (* --- Connection errors --- *)
 
@@ -190,6 +207,8 @@ let () =
       Alcotest.test_case "session_ready" `Quick test_session_ready;
       Alcotest.test_case "session_close" `Quick test_session_close;
       Alcotest.test_case "with info" `Quick test_session_with_info;
+      Alcotest.test_case "ready preserves fields" `Quick test_session_ready_preserves_id;
+      Alcotest.test_case "close preserves initialized_at" `Quick test_session_close_preserves_ready;
     ];
     "connection_error", [
       Alcotest.test_case "to_string" `Quick test_connection_error_to_string;

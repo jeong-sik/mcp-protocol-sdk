@@ -35,21 +35,21 @@ let parse_media_type s =
     let type_parts = String.split_on_char '/' (String.trim type_part) in
     match type_parts with
     | [type_; subtype] ->
-      let quality = ref 1.0 in
-      let params = List.filter_map (fun param ->
-        let param = String.trim param in
-        match String.split_on_char '=' param with
-        | [k; v] ->
-          let k = String.trim k in
-          let v = String.trim v in
-          if k = "q" then begin
-            quality := (try float_of_string v with _ -> 1.0);
-            None
-          end else
-            Some (k, v)
-        | _ -> None
-      ) rest in
-      Some { type_; subtype; quality = !quality; params }
+      let quality, params =
+        List.fold_left (fun (q, ps) param ->
+          let param = String.trim param in
+          match String.split_on_char '=' param with
+          | [k; v] ->
+            let k = String.trim k in
+            let v = String.trim v in
+            if k = "q" then
+              ((try float_of_string v with Failure _ -> 1.0), ps)
+            else
+              (q, (k, v) :: ps)
+          | _ -> (q, ps)
+        ) (1.0, []) rest
+      in
+      Some { type_; subtype; quality; params = List.rev params }
     | _ -> None
 
 (** Parse Accept header into sorted list of media types *)

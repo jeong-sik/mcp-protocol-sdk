@@ -4,4 +4,4 @@
  (libraries yojson uri unix)
  (preprocess
   (pps ppx_deriving_yojson))
- (modules mcp_protocol jsonrpc mcp_types error_codes http_negotiation version mcp_result session protocol resources logging sampling notifications))
+ (modules mcp_protocol jsonrpc mcp_types error_codes http_negotiation version mcp_result session logging sampling notifications transport))

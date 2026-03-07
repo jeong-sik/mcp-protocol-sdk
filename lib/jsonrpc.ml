@@ -128,6 +128,24 @@ let make_error ~id ~code ~message ?data () =
     error = { code; message; data }
   }
 
+(** {2 Request ID} *)
+
+(** Non-null request identifier. Unlike [id], this cannot be [Null].
+    Canonical definition — [Session.request_id] and [Mcp_result.request_id]
+    are aliases for this type. *)
+type request_id =
+  | String_id of string
+  | Int_id of int
+
+let request_id_to_yojson = function
+  | String_id s -> `String s
+  | Int_id i -> `Int i
+
+let request_id_of_yojson = function
+  | `String s -> Ok (String_id s)
+  | `Int i -> Ok (Int_id i)
+  | _ -> Error "Invalid request id"
+
 (** Parse a JSON-RPC message from a JSON string *)
 let message_of_string s =
   match Yojson.Safe.from_string s with

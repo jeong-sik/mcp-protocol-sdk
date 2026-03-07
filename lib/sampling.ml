@@ -5,17 +5,12 @@
     Reference: https://modelcontextprotocol.io/docs/concepts/sampling
 *)
 
-(** Role in a sampling message. *)
-type role = User | Assistant
+(** Role in a sampling message — alias for [Mcp_types.role]. *)
+type role = Mcp_types.role = User | Assistant
 
-let role_to_yojson = function
-  | User -> `String "user"
-  | Assistant -> `String "assistant"
+let role_to_yojson = Mcp_types.role_to_yojson
 
-let role_of_yojson = function
-  | `String "user" -> Ok User
-  | `String "assistant" -> Ok Assistant
-  | _ -> Error "Invalid sampling role"
+let role_of_yojson = Mcp_types.role_of_yojson
 
 (** Content types for sampling messages. *)
 type sampling_content =
