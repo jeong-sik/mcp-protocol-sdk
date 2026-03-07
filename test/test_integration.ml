@@ -62,7 +62,7 @@ let run_integration fn =
     (fun () ->
       Mcp_protocol_eio.Server.run server ~stdin:c2s_r ~stdout:s2c_w)
     (fun () ->
-      let client = Mcp_protocol_eio.Client.create ~stdin:s2c_r ~stdout:c2s_w in
+      let client = Mcp_protocol_eio.Client.create ~stdin:s2c_r ~stdout:c2s_w () in
       result := fn client;
       Mcp_protocol_eio.Client.close client;
       (* Close write end so server sees EOF *)
@@ -82,7 +82,7 @@ let run_integration_with ?(server = make_server ()) ?(setup = Fun.id) fn =
     (fun () ->
       Mcp_protocol_eio.Server.run server ~stdin:c2s_r ~stdout:s2c_w)
     (fun () ->
-      let client = Mcp_protocol_eio.Client.create ~stdin:s2c_r ~stdout:c2s_w in
+      let client = Mcp_protocol_eio.Client.create ~stdin:s2c_r ~stdout:c2s_w () in
       let client = setup client in
       result := fn client;
       Mcp_protocol_eio.Client.close client;

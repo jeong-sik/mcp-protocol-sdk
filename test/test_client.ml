@@ -14,7 +14,7 @@ let run_client_test responses fn =
   let source = Eio.Flow.string_source input_str in
   let buf = Buffer.create 1024 in
   let sink = Eio.Flow.buffer_sink buf in
-  let client = Mcp_protocol_eio.Client.create ~stdin:source ~stdout:sink in
+  let client = Mcp_protocol_eio.Client.create ~stdin:source ~stdout:sink () in
   let result = fn client in
   let output = Buffer.contents buf in
   let sent =
@@ -34,7 +34,7 @@ let run_client_test_with responses ?(setup = Fun.id) fn =
   let source = Eio.Flow.string_source input_str in
   let buf = Buffer.create 1024 in
   let sink = Eio.Flow.buffer_sink buf in
-  let client = Mcp_protocol_eio.Client.create ~stdin:source ~stdout:sink in
+  let client = Mcp_protocol_eio.Client.create ~stdin:source ~stdout:sink () in
   let client = setup client in
   let result = fn client in
   let output = Buffer.contents buf in
@@ -660,6 +660,19 @@ let test_capabilities_empty () =
       | _ -> Alcotest.fail "Missing capabilities object")
    | None -> Alcotest.fail "Missing params")
 
+let test_client_timeout_eof () =
+  Eio_main.run @@ fun env ->
+  (* Empty source = immediate EOF, so connection closes before timeout *)
+  let source = Eio.Flow.string_source "" in
+  let buf = Buffer.create 256 in
+  let sink = Eio.Flow.buffer_sink buf in
+  let client = Mcp_protocol_eio.Client.create ~stdin:source ~stdout:sink
+    ~clock:(Eio.Stdenv.clock env) () in
+  match Mcp_protocol_eio.Client.ping client with
+  | Error msg ->
+    Alcotest.(check bool) "has error message" true (String.length msg > 0)
+  | Ok () -> Alcotest.fail "Expected error from empty source"
+
 (* ── test suite ──────────────────────────────────────── *)
 
 let () =
@@ -689,6 +702,7 @@ let () =
     "error handling", [
       Alcotest.test_case "connection closed" `Quick test_connection_closed;
       Alcotest.test_case "skip notifications" `Quick test_skip_notifications;
+      Alcotest.test_case "timeout with clock (eof)" `Quick test_client_timeout_eof;
     ];
     "request ids", [
       Alcotest.test_case "increment" `Quick test_id_increment;

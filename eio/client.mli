@@ -11,7 +11,7 @@
       let _proc = Eio.Process.spawn ~sw mgr ~stdin:r1 ~stdout:w2 ["server"] in
       Eio.Flow.close r1;
       Eio.Flow.close w2;
-      let client = Client.create ~stdin:r2 ~stdout:w1 in
+      let client = Client.create ~stdin:r2 ~stdout:w1 () in
       match Client.initialize client ~client_name:"test" ~client_version:"1.0" with
       | Ok result -> Printf.printf "Connected to %s\n" result.server_info.name
       | Error e -> Printf.eprintf "Init failed: %s\n" e
@@ -26,8 +26,13 @@ type t
 
 (** Create a client connected to the given I/O flows.
     @param stdin  Source to read server responses from.
-    @param stdout Sink to write requests to the server. *)
-val create : stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink -> t
+    @param stdout Sink to write requests to the server.
+    @param clock  Optional Eio clock for request timeouts.
+      When provided, each request times out after [default_timeout] seconds
+      (configurable per-request via [?timeout] on [send_request]).
+      On timeout a [notifications/cancelled] notification is sent to the server. *)
+val create : stdin:_ Eio.Flow.source -> stdout:_ Eio.Flow.sink ->
+  ?clock:_ Eio.Time.clock -> unit -> t
 
 (** {2 Callback Registration}
 

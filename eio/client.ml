@@ -11,6 +11,8 @@ type elicitation_handler =
 type notification_handler =
   string -> Yojson.Safe.t option -> unit
 
+type timeout_fn = { run : 'a. float -> (unit -> 'a) -> 'a }
+
 type t = {
   transport: Stdio_transport.t;
   mutable next_id: int;
@@ -18,16 +20,25 @@ type t = {
   roots_handler: roots_handler option;
   elicitation_handler: elicitation_handler option;
   notification_handler: notification_handler option;
+  timeout_fn: timeout_fn option;
 }
 
-let create ~stdin ~stdout = {
-  transport = Stdio_transport.create ~stdin ~stdout ();
-  next_id = 1;
-  sampling_handler = None;
-  roots_handler = None;
-  elicitation_handler = None;
-  notification_handler = None;
-}
+let default_timeout = 60.0
+
+let create ~stdin ~stdout ?clock () =
+  let timeout_fn = match clock with
+    | Some c -> Some { run = fun d f -> Eio.Time.with_timeout_exn c d f }
+    | None -> None
+  in
+  {
+    transport = Stdio_transport.create ~stdin ~stdout ();
+    next_id = 1;
+    sampling_handler = None;
+    roots_handler = None;
+    elicitation_handler = None;
+    notification_handler = None;
+    timeout_fn;
+  }
 
 let on_sampling handler t = { t with sampling_handler = Some handler }
 let on_roots_list handler t = { t with roots_handler = Some handler }
@@ -162,17 +173,32 @@ let read_response t expected_id =
   in
   loop ()
 
-let send_request t ~method_ ?params () =
+let send_notification t ~method_ ?params () =
+  let msg = Jsonrpc.make_notification ~method_ ?params () in
+  Stdio_transport.write t.transport msg
+
+let send_request t ~method_ ?params ?(timeout = default_timeout) () =
   let id = Jsonrpc.Int t.next_id in
   t.next_id <- t.next_id + 1;
   let msg = Jsonrpc.make_request ~id ~method_ ?params () in
   match Stdio_transport.write t.transport msg with
   | Error e -> Error e
-  | Ok () -> read_response t id
-
-let send_notification t ~method_ ?params () =
-  let msg = Jsonrpc.make_notification ~method_ ?params () in
-  Stdio_transport.write t.transport msg
+  | Ok () ->
+    match t.timeout_fn with
+    | None -> read_response t id
+    | Some tf ->
+      begin try
+        tf.run timeout (fun () -> read_response t id)
+      with Eio.Time.Timeout ->
+        (* Best effort: notify peer we gave up *)
+        let _: (unit, string) result = send_notification t
+          ~method_:Notifications.cancelled
+          ~params:(`Assoc [
+            ("requestId", Jsonrpc.id_to_yojson id);
+            ("reason", `String "Request timed out")
+          ]) () in
+        Error (Printf.sprintf "Request timed out after %.1fs" timeout)
+      end
 
 (* ── helpers ──────────────────────────────────────── *)
 
