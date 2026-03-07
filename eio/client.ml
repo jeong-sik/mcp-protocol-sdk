@@ -76,8 +76,9 @@ let initialize t ~client_name ~client_version =
   match send_request t ~method_:Notifications.initialize ~params () with
   | Error e -> Error e
   | Ok result ->
-    let _ = send_notification t ~method_:Notifications.initialized () in
-    Mcp_types.initialize_result_of_yojson result
+    match send_notification t ~method_:Notifications.initialized () with
+    | Error e -> Error (Printf.sprintf "Failed to send initialized notification: %s" e)
+    | Ok () -> Mcp_types.initialize_result_of_yojson result
 
 (* ── ping ─────────────────────────────────────────── *)
 

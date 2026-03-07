@@ -415,7 +415,8 @@ let run s ~stdin ~stdout =
       end;
       loop ()
   in
-  loop ();
-  s.log_level <- !log_level_ref;
-  s.transport_ref <- None;
-  Stdio_transport.close transport
+  Fun.protect (fun () -> loop ())
+    ~finally:(fun () ->
+      s.log_level <- !log_level_ref;
+      s.transport_ref <- None;
+      Stdio_transport.close transport)
