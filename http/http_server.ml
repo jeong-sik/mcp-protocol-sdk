@@ -201,17 +201,29 @@ let handle_get s request : Cohttp_eio.Server.response =
   match validate_session_or_error s.session request with
   | Error resp -> resp
   | Ok () ->
-    let _client_id, _stream = Sse.Broadcaster.subscribe s.broadcaster in
-    (* v0.9.0: SSE streaming is simplified. Full streaming requires
-       Expert mode which will be added in a future version. *)
-    Cohttp_eio.Server.respond_string
-      ~headers:(Http.Header.of_list [
-        ("Content-Type", sse_content_type);
+    let client_id, stream = Sse.Broadcaster.subscribe s.broadcaster in
+    let flow = Sse_flow.create stream in
+    let sse_headers =
+      [ ("Content-Type", sse_content_type);
         ("Cache-Control", "no-cache");
         ("Connection", "keep-alive");
         ("X-Accel-Buffering", "no");
-      ])
-      ~status:`OK ~body:"" ()
+      ] @ cors_headers
+    in
+    let sse_headers = match Http_session.session_id s.session with
+      | Some sid -> (Http_session.header_name, sid) :: sse_headers
+      | None -> sse_headers
+    in
+    let base = Cohttp_eio.Server.respond
+      ~headers:(Http.Header.of_list sse_headers)
+      ~status:`OK ~body:(Sse_flow.as_source flow) ()
+    in
+    (* Wrap to guarantee unsubscribe on client disconnect or cancellation. *)
+    fun writer ->
+      Fun.protect
+        (fun () -> base writer)
+        ~finally:(fun () ->
+          Sse.Broadcaster.unsubscribe s.broadcaster client_id)
 
 (* ── DELETE handler ──────────────────────────── *)
 
@@ -273,13 +285,13 @@ let run s ~sw ~env:(env : Eio_unix.Stdenv.base) ?(port=8080) ?(prefix="/mcp") ?s
   | Some stop ->
     Cohttp_eio.Server.run ~stop socket cohttp_server
       ~on_error:(fun exn ->
-        Printf.eprintf "[%s] HTTP error: %s\n%!"
+        Printf.eprintf "[%s] HTTP error: %s"
           (Mcp_protocol_eio.Handler.name s.handler)
           (Printexc.to_string exn))
   | None ->
     let stop_promise, _stop_resolver = Eio.Promise.create () in
     Cohttp_eio.Server.run ~stop:stop_promise socket cohttp_server
       ~on_error:(fun exn ->
-        Printf.eprintf "[%s] HTTP error: %s\n%!"
+        Printf.eprintf "[%s] HTTP error: %s"
           (Mcp_protocol_eio.Handler.name s.handler)
           (Printexc.to_string exn))

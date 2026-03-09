@@ -19,7 +19,7 @@
  (libraries mcp_protocol mcp_protocol_eio eio eio.unix eio_main alcotest yojson))
 
 (tests
- (names test_sse test_http_session)
+ (names test_sse test_sse_flow test_http_session)
  (libraries mcp_protocol_http eio eio_main alcotest))
 
 (tests
