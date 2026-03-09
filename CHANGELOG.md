@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-03-09
+
 ### Changed
 - `Handler.subscribed_uris` now returns URIs in sorted order (was insertion order) due to `StringSet` migration.
 - `parse_list_field` and `build_initialize_params` moved to shared `Handler` module (was duplicated in stdio and HTTP clients).
@@ -206,6 +208,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Http_negotiation` module: Accept header parsing, transport negotiation.
 - `Version` module: protocol version handling and negotiation.
 
+[0.9.1]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.6.0...v0.7.0
