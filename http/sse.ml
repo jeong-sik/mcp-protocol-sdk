@@ -105,11 +105,12 @@ module Broadcaster = struct
     )
 
   let broadcast t evt =
-    Eio.Mutex.use_ro t.mutex (fun () ->
-      Hashtbl.iter (fun _id stream ->
-        Eio.Stream.add stream evt
-      ) t.clients
-    )
+    let clients =
+      Eio.Mutex.use_ro t.mutex (fun () ->
+        Hashtbl.fold (fun _id stream acc -> stream :: acc) t.clients []
+      )
+    in
+    List.iter (fun stream -> Eio.Stream.add stream evt) clients
 
   let client_count t =
     Eio.Mutex.use_ro t.mutex (fun () ->
