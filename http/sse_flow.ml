@@ -4,6 +4,7 @@
     pulled event.  When the buffer is exhausted, the next [single_read]
     blocks on [Eio.Stream.take] until a new event arrives. *)
 
+(* Invariant: single-reader. Only one fiber should call single_read. *)
 type t = {
   stream : Sse.event Eio.Stream.t;
   mutable buf : string;

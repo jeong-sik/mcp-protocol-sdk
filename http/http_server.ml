@@ -285,13 +285,13 @@ let run s ~sw ~env:(env : Eio_unix.Stdenv.base) ?(port=8080) ?(prefix="/mcp") ?s
   | Some stop ->
     Cohttp_eio.Server.run ~stop socket cohttp_server
       ~on_error:(fun exn ->
-        Printf.eprintf "[%s] HTTP error: %s"
+        Printf.eprintf "[%s] HTTP error: %s\n%!"
           (Mcp_protocol_eio.Handler.name s.handler)
           (Printexc.to_string exn))
   | None ->
     let stop_promise, _stop_resolver = Eio.Promise.create () in
     Cohttp_eio.Server.run ~stop:stop_promise socket cohttp_server
       ~on_error:(fun exn ->
-        Printf.eprintf "[%s] HTTP error: %s"
+        Printf.eprintf "[%s] HTTP error: %s\n%!"
           (Mcp_protocol_eio.Handler.name s.handler)
           (Printexc.to_string exn))
