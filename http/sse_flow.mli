@@ -9,7 +9,7 @@ type t
 
 (** [create stream] wraps an event stream as a flow source.
     Events are encoded to SSE wire format via {!Sse.encode} on demand. *)
-val create : Sse.event Eio.Stream.t -> t
+val create : Sse.event option Eio.Stream.t -> t
 
 (** [as_source t] returns the flow source for use with
     [Cohttp_eio.Server.respond ~body]. *)

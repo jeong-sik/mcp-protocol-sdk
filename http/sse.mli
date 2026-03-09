@@ -57,13 +57,17 @@ module Broadcaster : sig
 
   (** [subscribe t] registers a new client, returning [(id, stream)].
       The client receives future broadcasts on the returned stream. *)
-  val subscribe : t -> int * event Eio.Stream.t
+  val subscribe : t -> int * event option Eio.Stream.t
 
   (** [unsubscribe t id] removes the client with the given [id]. *)
   val unsubscribe : t -> int -> unit
 
   (** [broadcast t event] sends [event] to all connected clients. *)
   val broadcast : t -> event -> unit
+
+  (** [shutdown t] sends EOF to all clients and removes them.
+      Each client stream receives [None] as a poison pill. *)
+  val shutdown : t -> unit
 
   (** [client_count t] returns the number of connected clients. *)
   val client_count : t -> int

@@ -80,7 +80,7 @@ let ping = ": ping\n\n"
 
 module Broadcaster = struct
   type t = {
-    clients : (int, event Eio.Stream.t) Hashtbl.t;
+    clients : (int, event option Eio.Stream.t) Hashtbl.t;
     next_id : int Atomic.t;
     mutex : Eio.Mutex.t;
   }
@@ -110,7 +110,17 @@ module Broadcaster = struct
         Hashtbl.fold (fun _id stream acc -> stream :: acc) t.clients []
       )
     in
-    List.iter (fun stream -> Eio.Stream.add stream evt) clients
+    List.iter (fun stream -> Eio.Stream.add stream (Some evt)) clients
+
+  let shutdown t =
+    let clients =
+      Eio.Mutex.use_rw ~protect:true t.mutex (fun () ->
+        let lst = Hashtbl.fold (fun _id stream acc -> stream :: acc) t.clients [] in
+        Hashtbl.clear t.clients;
+        lst
+      )
+    in
+    List.iter (fun stream -> Eio.Stream.add stream None) clients
 
   let client_count t =
     Eio.Mutex.use_ro t.mutex (fun () ->

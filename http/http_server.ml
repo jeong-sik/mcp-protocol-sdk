@@ -231,6 +231,7 @@ let handle_delete s request : Cohttp_eio.Server.response =
   match validate_session_or_error s.session request with
   | Error resp -> resp
   | Ok () ->
+    Sse.Broadcaster.shutdown s.broadcaster;
     Http_session.close s.session;
     respond_empty ~status:`OK s.session
 

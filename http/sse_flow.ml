@@ -6,7 +6,7 @@
 
 (* Invariant: single-reader. Only one fiber should call single_read. *)
 type t = {
-  stream : Sse.event Eio.Stream.t;
+  stream : Sse.event option Eio.Stream.t;
   mutable buf : string;
   mutable pos : int;
 }
@@ -23,9 +23,11 @@ module Source = struct
   let single_read t dst =
     (* Refill from stream when the internal buffer is exhausted. *)
     if t.pos >= String.length t.buf then begin
-      let evt = Eio.Stream.take t.stream in
-      t.buf <- Sse.encode evt;
-      t.pos <- 0
+      match Eio.Stream.take t.stream with
+      | None -> raise End_of_file
+      | Some evt ->
+        t.buf <- Sse.encode evt;
+        t.pos <- 0
     end;
     let available = String.length t.buf - t.pos in
     let n = min available (Cstruct.length dst) in
