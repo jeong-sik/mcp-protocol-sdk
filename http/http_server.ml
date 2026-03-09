@@ -9,6 +9,7 @@ type t = {
   session : Http_session.t;
   broadcaster : Sse.Broadcaster.t;
   mutable log_level : Logging.log_level;
+  mutable sleep : (float -> unit) option;
 }
 
 let create ~name ~version ?instructions () = {
@@ -16,6 +17,7 @@ let create ~name ~version ?instructions () = {
   session = Http_session.create ();
   broadcaster = Sse.Broadcaster.create ();
   log_level = Logging.Warning;
+  sleep = None;
 }
 
 let add_tool tool handler s =
@@ -202,7 +204,7 @@ let handle_get s request : Cohttp_eio.Server.response =
   | Error resp -> resp
   | Ok () ->
     let client_id, stream = Sse.Broadcaster.subscribe s.broadcaster in
-    let flow = Sse_flow.create stream in
+    let flow = Sse_flow.create ?sleep:s.sleep stream in
     let sse_headers =
       [ ("Content-Type", sse_content_type);
         ("Cache-Control", "no-cache");
@@ -275,6 +277,8 @@ let callback s ?(prefix="/mcp") _conn request body =
 (* ── standalone run ──────────────────────────── *)
 
 let run s ~sw ~env:(env : Eio_unix.Stdenv.base) ?(port=8080) ?(prefix="/mcp") ?stop () =
+  let clock = Eio.Stdenv.clock env in
+  s.sleep <- Some (Eio.Time.sleep clock);
   let net = Eio.Stdenv.net env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   let socket = Eio.Net.listen ~sw net addr ~backlog:128 in

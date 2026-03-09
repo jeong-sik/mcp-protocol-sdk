@@ -7,11 +7,35 @@
 (* Invariant: single-reader. Only one fiber should call single_read. *)
 type t = {
   stream : Sse.event option Eio.Stream.t;
+  sleep : (float -> unit) option;
+  ping_interval : float;
   mutable buf : string;
   mutable pos : int;
 }
 
-let create stream = { stream; buf = ""; pos = 0 }
+let create ?sleep ?(ping_interval = 30.0) stream =
+  { stream; sleep; ping_interval; buf = ""; pos = 0 }
+
+(* Result of attempting to pull the next chunk from the stream. *)
+type take_result = Event of Sse.event | Eof | Ping
+
+let take_next t =
+  match t.sleep with
+  | None ->
+    (* No clock: block indefinitely on stream. *)
+    (match Eio.Stream.take t.stream with
+     | None -> Eof
+     | Some evt -> Event evt)
+  | Some sleep ->
+    (* Race stream take against ping timeout. *)
+    Eio.Fiber.first
+      (fun () ->
+        match Eio.Stream.take t.stream with
+        | None -> Eof
+        | Some evt -> Event evt)
+      (fun () ->
+        sleep t.ping_interval;
+        Ping)
 
 (* ── Eio.Flow.Pi.SOURCE implementation ──────── *)
 
@@ -23,10 +47,13 @@ module Source = struct
   let single_read t dst =
     (* Refill from stream when the internal buffer is exhausted. *)
     if t.pos >= String.length t.buf then begin
-      match Eio.Stream.take t.stream with
-      | None -> raise End_of_file
-      | Some evt ->
+      match take_next t with
+      | Eof -> raise End_of_file
+      | Event evt ->
         t.buf <- Sse.encode evt;
+        t.pos <- 0
+      | Ping ->
+        t.buf <- Sse.ping;
         t.pos <- 0
     end;
     let available = String.length t.buf - t.pos in

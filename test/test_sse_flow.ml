@@ -117,6 +117,34 @@ let test_blocking_on_empty_stream () =
   Alcotest.(check string) "received after block"
     "event: message\ndata: delayed\n\n" !received
 
+(** Ping is emitted after idle timeout when sleep is provided. *)
+let test_ping_on_idle () =
+  Eio_main.run @@ fun env ->
+  let clock = Eio.Stdenv.clock env in
+  let stream = Eio.Stream.create 10 in
+  let flow = Sse_flow.create
+    ~sleep:(Eio.Time.sleep clock)
+    ~ping_interval:0.01
+    stream in
+  let source = Sse_flow.as_source flow in
+  let data = read_all_available source 4096 in
+  Alcotest.(check string) "ping on idle" ": ping\n\n" data
+
+(** Events take priority over ping when already queued. *)
+let test_event_before_ping () =
+  Eio_main.run @@ fun env ->
+  let clock = Eio.Stdenv.clock env in
+  let stream = Eio.Stream.create 10 in
+  Eio.Stream.add stream (Some (Sse.event "message" "real"));
+  let flow = Sse_flow.create
+    ~sleep:(Eio.Time.sleep clock)
+    ~ping_interval:10.0
+    stream in
+  let source = Sse_flow.as_source flow in
+  let data = read_all_available source 4096 in
+  Alcotest.(check string) "event before ping"
+    "event: message\ndata: real\n\n" data
+
 (** None (poison pill) raises End_of_file. *)
 let test_eof_on_none () =
   Eio_main.run @@ fun _env ->
@@ -145,5 +173,9 @@ let () =
       Alcotest.test_case "small buffer" `Quick test_small_buffer;
       Alcotest.test_case "blocking" `Quick test_blocking_on_empty_stream;
       Alcotest.test_case "EOF on None" `Quick test_eof_on_none;
+    ];
+    "ping", [
+      Alcotest.test_case "ping on idle" `Quick test_ping_on_idle;
+      Alcotest.test_case "event before ping" `Quick test_event_before_ping;
     ];
   ]
