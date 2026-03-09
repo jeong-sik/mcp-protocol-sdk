@@ -74,6 +74,32 @@ let with_server ~env f =
         (fun () -> f client port)
         ~finally:(fun () -> Eio.Promise.resolve stop_resolver ()))
 
+(** Like [with_server] but uses [Fiber.first] so that when [f] returns
+    the server is cancelled. This prevents SSE streaming handlers from
+    blocking test shutdown (they are stuck on [Stream.take]).
+    Optionally pass [~server] to use a custom Http_server.t. *)
+let with_sse_server ~env ?server f =
+  Eio.Switch.run @@ fun sw ->
+  let s = match server with Some s -> s | None -> make_server () in
+  let net = Eio.Stdenv.net env in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 0) in
+  let socket = Eio.Net.listen ~sw net addr ~backlog:16 in
+  let port = match Eio.Net.listening_addr socket with
+    | `Tcp (_, port) -> port
+    | _ -> failwith "unexpected address"
+  in
+  let cohttp_server = Cohttp_eio.Server.make
+    ~callback:(fun conn request body ->
+      Http_server.callback s conn request body)
+    () in
+  Eio.Fiber.first
+    (fun () ->
+      Cohttp_eio.Server.run socket cohttp_server
+        ~on_error:(fun _exn -> ()))
+    (fun () ->
+      let client = Cohttp_eio.Client.make ~https:None net in
+      f client port)
+
 let base_uri port path =
   Uri.of_string (Printf.sprintf "http://127.0.0.1:%d%s" port path)
 
@@ -281,21 +307,128 @@ let test_get_without_session env () =
       (Http.Status.to_int (Http.Response.status resp)))
 
 let test_get_with_session env () =
-  with_server ~env (fun client port ->
+  with_sse_server ~env (fun client port ->
     Eio.Switch.run @@ fun sw ->
     (* Initialize *)
     let resp, _body = post_json client ~sw ~headers:[] port "/mcp"
       (make_initialize_json ()) in
     let sid = Option.get
       (Http.Header.get (Http.Response.headers resp) "mcp-session-id") in
-    (* GET with session ID *)
-    let resp2, _body2 = get_req client ~sw
-      ~headers:[("mcp-session-id", sid)] port "/mcp" in
-    Alcotest.(check int) "status 200" 200
-      (Http.Status.to_int (Http.Response.status resp2));
-    let ct = Http.Header.get (Http.Response.headers resp2) "content-type" in
-    Alcotest.(check (option string)) "SSE content type"
-      (Some "text/event-stream") ct)
+    (* GET returns an infinite SSE stream. Use Fiber.first so that
+       the checker fiber can validate headers then exit, cancelling
+       the GET fiber and its body read. *)
+    let got_resp, set_resp = Eio.Promise.create () in
+    Eio.Fiber.first
+      (fun () ->
+        let resp2, _body2 = get_req client ~sw
+          ~headers:[("mcp-session-id", sid)] port "/mcp" in
+        Eio.Promise.resolve set_resp resp2;
+        Eio.Fiber.await_cancel ())
+      (fun () ->
+        let resp2 = Eio.Promise.await got_resp in
+        Alcotest.(check int) "status 200" 200
+          (Http.Status.to_int (Http.Response.status resp2));
+        let ct = Http.Header.get (Http.Response.headers resp2)
+          "content-type" in
+        Alcotest.(check (option string)) "SSE content type"
+          (Some "text/event-stream") ct))
+
+(* ── SSE event delivery ────────────────────────── *)
+
+(** Read one SSE event block from a body flow.
+    Reads lines until a blank line (event delimiter). *)
+let read_sse_event body =
+  let br = Eio.Buf_read.of_flow ~max_size:(64 * 1024) body in
+  let buf = Buffer.create 256 in
+  let rec loop () =
+    let line = Eio.Buf_read.line br in
+    if String.length line = 0 then
+      Buffer.contents buf
+    else begin
+      Buffer.add_string buf line;
+      Buffer.add_char buf '\n';
+      loop ()
+    end
+  in
+  loop ()
+
+let notify_tool =
+  Mcp_types.{
+    name = "notify";
+    description = Some "Tool that sends a log notification";
+    input_schema = `Assoc ["type", `String "object"];
+    title = None;
+    annotations = None;
+  }
+
+let notify_handler ctx _name _args =
+  (* Use send_notification directly to bypass log level filtering *)
+  let _ = ctx.Mcp_protocol_eio.Handler.send_notification
+    ~method_:"notifications/message"
+    ~params:(Some (`Assoc [
+      "level", `String "info";
+      "data", `String "hello from SSE"
+    ])) in
+  Ok (Mcp_types.tool_result_of_text "notified")
+
+let make_notify_server () =
+  Http_server.create ~name:"test-server" ~version:"1.0.0" ()
+  |> Http_server.add_tool echo_tool echo_handler
+  |> Http_server.add_tool notify_tool notify_handler
+
+let make_tools_call_notify_json () =
+  {|{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"notify","arguments":{}}}|}
+
+let test_sse_event_delivery env () =
+  let server = make_notify_server () in
+  with_sse_server ~env ~server (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* 1. Initialize *)
+    let resp, _body = post_json client ~sw ~headers:[] port "/mcp"
+      (make_initialize_json ()) in
+    let sid = Option.get
+      (Http.Header.get (Http.Response.headers resp) "mcp-session-id") in
+    (* Send notifications/initialized *)
+    let _r, _b = post_json client ~sw
+      ~headers:[("mcp-session-id", sid)] port "/mcp"
+      (make_notification_json ()) in
+    (* 2. SSE reader fiber + tool call fiber *)
+    let got_event, set_event = Eio.Promise.create () in
+    let sse_ready, set_sse_ready = Eio.Promise.create () in
+    Eio.Fiber.first
+      (fun () ->
+        let _resp2, body2 = get_req client ~sw
+          ~headers:[("mcp-session-id", sid)] port "/mcp" in
+        Eio.Promise.resolve set_sse_ready ();
+        let event_text = read_sse_event body2 in
+        Eio.Promise.resolve set_event event_text;
+        Eio.Fiber.await_cancel ())
+      (fun () ->
+        Eio.Promise.await sse_ready;
+        Eio.Time.sleep (Eio.Stdenv.clock env) 0.05;
+        (* 3. Call the notify tool via POST *)
+        let _resp3, _body3 = post_json client ~sw
+          ~headers:[("mcp-session-id", sid)] port "/mcp"
+          (make_tools_call_notify_json ()) in
+        (* 4. Wait for the SSE event *)
+        let event_text = Eio.Promise.await got_event in
+        Alcotest.(check bool) "event not empty" true
+          (String.length event_text > 0);
+        let lines = String.split_on_char '\n' event_text in
+        let data_line = List.find_opt
+          (fun l -> String.length l > 5 && String.sub l 0 5 = "data:") lines in
+        Alcotest.(check bool) "has data: line" true
+          (Option.is_some data_line);
+        let json_str = match data_line with
+          | Some l -> String.trim (String.sub l 5 (String.length l - 5))
+          | None -> "" in
+        let json = Yojson.Safe.from_string json_str in
+        let method_ = match json with
+          | `Assoc fields -> List.assoc_opt "method" fields
+          | _ -> None in
+        Alcotest.(check (option string)) "is logging notification"
+          (Some "notifications/message")
+          (match method_ with Some (`String s) -> Some s | _ -> None)))
 
 (* ── DELETE /mcp ─────────────────────────────── *)
 
@@ -384,6 +517,7 @@ let () =
     "get", [
       Alcotest.test_case "without session" `Quick (test_get_without_session env);
       Alcotest.test_case "with session" `Quick (test_get_with_session env);
+      Alcotest.test_case "event delivery" `Quick (test_sse_event_delivery env);
     ];
     "delete", [
       Alcotest.test_case "session" `Quick (test_delete_session env);
