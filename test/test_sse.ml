@@ -134,10 +134,11 @@ let test_broadcaster_broadcast () =
   let _id2, s2 = Sse.Broadcaster.subscribe b in
   let evt = Sse.data "hello" in
   Sse.Broadcaster.broadcast b evt;
-  let r1 = Eio.Stream.take s1 in
-  let r2 = Eio.Stream.take s2 in
-  Alcotest.(check string) "client 1" "hello" r1.data;
-  Alcotest.(check string) "client 2" "hello" r2.data
+  (match Eio.Stream.take s1, Eio.Stream.take s2 with
+   | Some r1, Some r2 ->
+     Alcotest.(check string) "client 1" "hello" r1.data;
+     Alcotest.(check string) "client 2" "hello" r2.data
+   | _ -> Alcotest.fail "expected Some events")
 
 let test_broadcaster_broadcast_after_unsubscribe () =
   Eio_main.run @@ fun _env ->
@@ -147,9 +148,39 @@ let test_broadcaster_broadcast_after_unsubscribe () =
   Sse.Broadcaster.unsubscribe b id1;
   let evt = Sse.data "after unsub" in
   Sse.Broadcaster.broadcast b evt;
+  (match Eio.Stream.take s2 with
+   | Some r2 ->
+     Alcotest.(check string) "remaining client" "after unsub" r2.data;
+     Alcotest.(check int) "count after unsub" 1 (Sse.Broadcaster.client_count b)
+   | None -> Alcotest.fail "expected Some event")
+
+(** Broadcast snapshots the client list under mutex, so a client
+    subscribed after snapshot is taken does not receive the event. *)
+let test_broadcast_uses_snapshot () =
+  Eio_main.run @@ fun _env ->
+  let b = Sse.Broadcaster.create () in
+  let _id1, s1 = Sse.Broadcaster.subscribe b in
+  Sse.Broadcaster.broadcast b (Sse.data "msg");
+  (* subscribe after broadcast — should not receive "msg" *)
+  let _id2, s2 = Sse.Broadcaster.subscribe b in
+  (match Eio.Stream.take s1 with
+   | Some r1 ->
+     Alcotest.(check string) "client 1 got event" "msg" r1.data
+   | None -> Alcotest.fail "expected Some event");
+  let late = Eio.Stream.take_nonblocking s2 in
+  Alcotest.(check bool) "client 2 empty" true (late = None)
+
+let test_shutdown_sends_none () =
+  Eio_main.run @@ fun _env ->
+  let b = Sse.Broadcaster.create () in
+  let _id1, s1 = Sse.Broadcaster.subscribe b in
+  let _id2, s2 = Sse.Broadcaster.subscribe b in
+  Sse.Broadcaster.shutdown b;
+  let r1 = Eio.Stream.take s1 in
   let r2 = Eio.Stream.take s2 in
-  Alcotest.(check string) "remaining client" "after unsub" r2.data;
-  Alcotest.(check int) "count after unsub" 1 (Sse.Broadcaster.client_count b)
+  Alcotest.(check bool) "client 1 EOF" true (r1 = None);
+  Alcotest.(check bool) "client 2 EOF" true (r2 = None);
+  Alcotest.(check int) "clients cleared" 0 (Sse.Broadcaster.client_count b)
 
 (* ── Test suite ──────────────────────────────── *)
 
@@ -179,5 +210,7 @@ let () =
       Alcotest.test_case "unsubscribe" `Quick test_broadcaster_unsubscribe;
       Alcotest.test_case "broadcast" `Quick test_broadcaster_broadcast;
       Alcotest.test_case "broadcast after unsub" `Quick test_broadcaster_broadcast_after_unsubscribe;
+      Alcotest.test_case "broadcast uses snapshot" `Quick test_broadcast_uses_snapshot;
+      Alcotest.test_case "shutdown sends None" `Quick test_shutdown_sends_none;
     ];
   ]
