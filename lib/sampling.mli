@@ -57,6 +57,8 @@ type create_message_params = {
   max_tokens: int;
   stop_sequences: string list option;
   metadata: Yojson.Safe.t option;
+  tools: Yojson.Safe.t option;
+  tool_choice: Yojson.Safe.t option;
 }
 
 val create_message_params_to_yojson : create_message_params -> Yojson.Safe.t

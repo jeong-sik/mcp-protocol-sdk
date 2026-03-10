@@ -141,6 +141,8 @@ type create_message_params = {
   max_tokens: int;
   stop_sequences: string list option;
   metadata: Yojson.Safe.t option;
+  tools: Yojson.Safe.t option;       (** Tool definitions for tool calling in sampling (SEP-1577) *)
+  tool_choice: Yojson.Safe.t option;  (** Tool choice constraint *)
 }
 
 let create_message_params_to_yojson p =
@@ -170,6 +172,14 @@ let create_message_params_to_yojson p =
   in
   let fields = match p.model_preferences with
     | Some mp -> ("modelPreferences", model_preferences_to_yojson mp) :: fields
+    | None -> fields
+  in
+  let fields = match p.tools with
+    | Some t -> ("tools", t) :: fields
+    | None -> fields
+  in
+  let fields = match p.tool_choice with
+    | Some tc -> ("toolChoice", tc) :: fields
     | None -> fields
   in
   `Assoc fields
@@ -202,6 +212,8 @@ let create_message_params_of_yojson = function
          stop_sequences = (match List.assoc_opt "stopSequences" fields with
            | Some (`List l) -> Some (List.map to_string l) | _ -> None);
          metadata = List.assoc_opt "metadata" fields;
+         tools = List.assoc_opt "tools" fields;
+         tool_choice = List.assoc_opt "toolChoice" fields;
        }
      | Error e -> Error e)
   | _ -> Error "create_message_params must be an object"

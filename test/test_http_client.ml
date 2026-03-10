@@ -12,6 +12,7 @@ let echo_tool =
     input_schema = `Assoc ["type", `String "object"];
     title = None;
     annotations = None;
+    icon = None;
   }
 
 let echo_handler _ctx _name args =
@@ -30,6 +31,7 @@ let greet_resource =
     name = "greet";
     description = Some "A greeting resource";
     mime_type = Some "text/plain";
+    icon = None;
   }
 
 let greet_handler _ctx uri =
@@ -49,6 +51,7 @@ let hello_prompt =
       description = Some "Your name";
       required = Some true;
     }];
+    icon = None;
   }
 
 let hello_prompt_handler _ctx _name _args =

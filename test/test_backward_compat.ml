@@ -35,12 +35,14 @@ let test_resources_helpers () =
     name = "X";
     description = Some "desc";
     mime_type = Some "text/plain";
+    icon = None;
   } in
   let template : Resources.resource_template = {
     uri_template = "memory://{id}";
     name = "T";
     description = Some "desc";
     mime_type = Some "text/plain";
+    icon = None;
   } in
   let content : Resources.content = {
     uri = "memory://x";

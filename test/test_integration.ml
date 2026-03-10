@@ -10,6 +10,7 @@ let echo_tool : Mcp_types.tool = {
   input_schema = `Assoc [("type", `String "object")];
   title = None;
   annotations = None;
+  icon = None;
 }
 
 let test_resource : Mcp_types.resource = {
@@ -17,12 +18,14 @@ let test_resource : Mcp_types.resource = {
   name = "hello.txt";
   description = Some "A test file";
   mime_type = Some "text/plain";
+  icon = None;
 }
 
 let greet_prompt : Mcp_types.prompt = {
   name = "greet";
   description = Some "Greeting prompt";
   arguments = Some [{ name = "name"; description = None; required = Some true }];
+  icon = None;
 }
 
 let make_server () =
@@ -98,6 +101,7 @@ let sampling_tool : Mcp_types.tool = {
   input_schema = `Assoc [("type", `String "object")];
   title = None;
   annotations = None;
+  icon = None;
 }
 
 (** Tool that calls ctx.request_roots_list mid-request. *)
@@ -107,6 +111,7 @@ let roots_tool : Mcp_types.tool = {
   input_schema = `Assoc [("type", `String "object")];
   title = None;
   annotations = None;
+  icon = None;
 }
 
 (** Tool that calls ctx.request_elicitation mid-request. *)
@@ -116,6 +121,7 @@ let elicit_tool : Mcp_types.tool = {
   input_schema = `Assoc [("type", `String "object")];
   title = None;
   annotations = None;
+  icon = None;
 }
 
 (** Tool that calls both request_sampling and request_roots_list sequentially. *)
@@ -125,6 +131,7 @@ let multi_tool : Mcp_types.tool = {
   input_schema = `Assoc [("type", `String "object")];
   title = None;
   annotations = None;
+  icon = None;
 }
 
 let make_sampling_server () =
@@ -140,6 +147,8 @@ let make_sampling_server () =
       max_tokens = 100;
       stop_sequences = None;
       metadata = None;
+      tools = None;
+      tool_choice = None;
     } in
     match ctx.request_sampling params with
     | Ok result ->
@@ -169,6 +178,7 @@ let make_elicitation_server () =
     let params = Mcp_types.{
       message = "Do you confirm?";
       requested_schema = None;
+      mode = None;
     } in
     match ctx.request_elicitation params with
     | Ok result ->
@@ -193,6 +203,8 @@ let make_multi_server () =
       max_tokens = 50;
       stop_sequences = None;
       metadata = None;
+      tools = None;
+      tool_choice = None;
     } in
     match ctx.request_sampling sampling_params with
     | Error e -> Error ("Sampling failed: " ^ e)

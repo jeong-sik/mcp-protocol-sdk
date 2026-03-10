@@ -37,6 +37,7 @@ let test_tool_roundtrip () =
     ];
     title = None;
     annotations = None;
+    icon = None;
   } in
   let j = Mcp_types.tool_to_yojson tool in
   match Mcp_types.tool_of_yojson j with
@@ -52,6 +53,7 @@ let test_tool_no_description () =
     input_schema = `Assoc [("type", `String "object")];
     title = None;
     annotations = None;
+    icon = None;
   } in
   let j = Mcp_types.tool_to_yojson tool in
   match Mcp_types.tool_of_yojson j with
@@ -68,6 +70,7 @@ let test_tool_def_alias () =
     input_schema = `Assoc [];
     title = None;
     annotations = None;
+    icon = None;
   } in
   let j = Mcp_types.tool_to_yojson td in
   match Mcp_types.tool_of_yojson j with
@@ -83,6 +86,7 @@ let test_resource_roundtrip () =
     name = "test";
     description = Some "A test file";
     mime_type = Some "text/plain";
+    icon = None;
   } in
   let j = Mcp_types.resource_to_yojson res in
   match Mcp_types.resource_of_yojson j with
@@ -102,6 +106,7 @@ let test_prompt_roundtrip () =
       description = Some "The code to review";
       required = Some true;
     }];
+    icon = None;
   } in
   let j = Mcp_types.prompt_to_yojson p in
   match Mcp_types.prompt_of_yojson j with
@@ -692,6 +697,7 @@ let test_elicitation_params_roundtrip () =
   let params : Mcp_types.elicitation_params = {
     message = "Please enter your name";
     requested_schema = Some schema;
+    mode = None;
   } in
   let j = Mcp_types.elicitation_params_to_yojson params in
   (* Check requestedSchema key (camelCase) *)
@@ -710,6 +716,7 @@ let test_elicitation_params_no_schema () =
   let params : Mcp_types.elicitation_params = {
     message = "Confirm?";
     requested_schema = None;
+    mode = None;
   } in
   let j = Mcp_types.elicitation_params_to_yojson params in
   match Mcp_types.elicitation_params_of_yojson j with
@@ -788,6 +795,70 @@ let test_unknown_content_type () =
     Alcotest.(check bool) "mentions unknown type"
       true (String.length msg > 0)
   | Ok _ -> Alcotest.fail "expected error for unknown content type"
+
+(* --- Icons --- *)
+
+let test_tool_with_icon () =
+  let t : Mcp_types.tool = {
+    name = "icon_tool";
+    description = None;
+    input_schema = `Assoc [("type", `String "object")];
+    title = None;
+    annotations = None;
+    icon = Some "https://example.com/icon.png";
+  } in
+  let j = Mcp_types.tool_to_yojson t in
+  match Mcp_types.tool_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "icon" (Some "https://example.com/icon.png") decoded.icon
+  | Error e -> Alcotest.fail e
+
+let test_resource_with_icon () =
+  let r : Mcp_types.resource = {
+    uri = "file:///x";
+    name = "icon_res";
+    description = None;
+    mime_type = None;
+    icon = Some "data:image/svg+xml,<svg/>";
+  } in
+  let j = Mcp_types.resource_to_yojson r in
+  match Mcp_types.resource_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "icon" (Some "data:image/svg+xml,<svg/>") decoded.icon
+  | Error e -> Alcotest.fail e
+
+let test_prompt_with_icon () =
+  let p : Mcp_types.prompt = {
+    name = "icon_prompt";
+    description = None;
+    arguments = None;
+    icon = Some "https://example.com/prompt.svg";
+  } in
+  let j = Mcp_types.prompt_to_yojson p in
+  match Mcp_types.prompt_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "icon" (Some "https://example.com/prompt.svg") decoded.icon
+  | Error e -> Alcotest.fail e
+
+(* --- URL Elicitation Mode --- *)
+
+let test_elicitation_url_mode () =
+  let params : Mcp_types.elicitation_params = {
+    message = "Enter the URL";
+    requested_schema = None;
+    mode = Some "url";
+  } in
+  let j = Mcp_types.elicitation_params_to_yojson params in
+  (* Check mode key is present *)
+  (match j with
+   | `Assoc fields ->
+     Alcotest.(check bool) "mode key present"
+       true (List.mem_assoc "mode" fields)
+   | _ -> Alcotest.fail "expected object");
+  match Mcp_types.elicitation_params_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "mode" (Some "url") decoded.mode
+  | Error e -> Alcotest.fail e
 
 (* --- Suite --- *)
 
@@ -895,6 +966,12 @@ let () =
       Alcotest.test_case "action round-trip" `Quick test_elicitation_action_roundtrip;
       Alcotest.test_case "result accept" `Quick test_elicitation_result_accept;
       Alcotest.test_case "result decline" `Quick test_elicitation_result_decline;
+      Alcotest.test_case "url mode" `Quick test_elicitation_url_mode;
+    ];
+    "icons", [
+      Alcotest.test_case "tool with icon" `Quick test_tool_with_icon;
+      Alcotest.test_case "resource with icon" `Quick test_resource_with_icon;
+      Alcotest.test_case "prompt with icon" `Quick test_prompt_with_icon;
     ];
     "completion_context", [
       Alcotest.test_case "round-trip" `Quick test_completion_context_roundtrip;

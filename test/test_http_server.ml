@@ -32,6 +32,7 @@ let echo_tool =
     input_schema = `Assoc ["type", `String "object"];
     title = None;
     annotations = None;
+    icon = None;
   }
 
 let echo_handler _ctx _name args =
@@ -359,6 +360,7 @@ let notify_tool =
     input_schema = `Assoc ["type", `String "object"];
     title = None;
     annotations = None;
+    icon = None;
   }
 
 let notify_handler ctx _name _args =
