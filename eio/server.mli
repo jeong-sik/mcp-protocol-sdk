@@ -78,6 +78,13 @@ val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
     registering a new one replaces the previous. *)
 val add_completion_handler : completion_handler -> t -> t
 
+(** Task handlers for serving task lifecycle methods.
+    See {!Handler.task_handlers} for field details. *)
+type task_handlers = Handler.task_handlers
+
+(** Register task handlers for tasks/get, tasks/result, tasks/list, tasks/cancel. *)
+val add_task_handlers : task_handlers -> t -> t
+
 (** Send a notification to the connected client.
     Only usable after [run] has been called (returns [Error] otherwise). *)
 val send_notification : t -> method_:string -> params:Yojson.Safe.t option -> (unit, string) result

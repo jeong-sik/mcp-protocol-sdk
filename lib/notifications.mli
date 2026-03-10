@@ -62,6 +62,14 @@ val ping : string
 
 val elicitation_create : string
 
+(** {2 Tasks (experimental, 2025-11-25)} *)
+
+val tasks_get : string
+val tasks_result : string
+val tasks_list : string
+val tasks_cancel : string
+val tasks_status : string
+
 (** {2 Utility} *)
 
 val is_notification : string -> bool

@@ -342,6 +342,35 @@ let get_prompt t ~name ?arguments () =
   | Error e -> Error e
   | Ok result -> Mcp_types.prompt_result_of_yojson result
 
+(* ── tasks ────────────────────────────────────────── *)
+
+let get_task t ~task_id =
+  let params = `Assoc [("taskId", `String task_id)] in
+  match send_request t ~method_:Notifications.tasks_get ~params () with
+  | Error e -> Error e
+  | Ok result -> Mcp_types.task_of_yojson result
+
+let get_task_result t ~task_id =
+  let params = `Assoc [("taskId", `String task_id)] in
+  match send_request t ~method_:Notifications.tasks_result ~params () with
+  | Error e -> Error e
+  | Ok result -> Ok result
+
+let list_tasks ?cursor t =
+  let params = match cursor with
+    | Some c -> Some (`Assoc [("cursor", `String c)])
+    | None -> None
+  in
+  match send_request t ~method_:Notifications.tasks_list ?params () with
+  | Error e -> Error e
+  | Ok result -> Handler.parse_list_field "tasks" Mcp_types.task_of_yojson result
+
+let cancel_task t ~task_id =
+  let params = `Assoc [("taskId", `String task_id)] in
+  match send_request t ~method_:Notifications.tasks_cancel ~params () with
+  | Error e -> Error e
+  | Ok result -> Mcp_types.task_of_yojson result
+
 (* ── close ────────────────────────────────────────── *)
 
 let close t =

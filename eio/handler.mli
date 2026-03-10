@@ -45,6 +45,14 @@ type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.
 type completion_handler =
   Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
 
+(** Callbacks for serving tasks/get, tasks/result, tasks/list, tasks/cancel. *)
+type task_handlers = {
+  get: string -> (Mcp_types.task, string) result;
+  result: string -> (Yojson.Safe.t, string) result;
+  list: string option -> (Mcp_types.task list * string option, string) result;
+  cancel: string -> (Mcp_types.task, string) result;
+}
+
 (** {2 Handler Registry} *)
 
 type t
@@ -54,6 +62,7 @@ val add_tool : Mcp_types.tool -> tool_handler -> t -> t
 val add_resource : Mcp_types.resource -> resource_handler -> t -> t
 val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
 val add_completion_handler : completion_handler -> t -> t
+val add_task_handlers : task_handlers -> t -> t
 
 (** {2 Shared Client Helpers} *)
 
