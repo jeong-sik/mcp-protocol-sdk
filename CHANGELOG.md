@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-03-11
+
+### Added
+- **Tasks primitive** (MCP 2025-11-25 experimental, SEP-1686): 5-state lifecycle (working/input_required/completed/failed/cancelled), `tasks/get`, `tasks/result`, `tasks/list`, `tasks/cancel`, `notifications/tasks/status`. Server and client support with task handler registration.
+- **Icons metadata** (SEP-973): `icon: string option` field on `tool`, `resource`, `resource_template`, `prompt` types. `make_tool`, `make_resource`, `make_prompt` constructors accept `?icon` parameter.
+- **URL elicitation mode** (SEP-1036): `mode: string option` field on `elicitation_params` for URL input requests.
+- **Sampling tool calling** (SEP-1577): `tools` and `tool_choice` fields on `create_message_params`. None values are omitted from JSON output.
+- `version_features`: `has_tasks`, `has_icons` flags. `2025-11-25` version enables both.
+- 12 new tests across 6 test suites: Tasks lifecycle, icons round-trip (tool/resource/resource_template/prompt), URL elicitation mode, Sampling tools/toolChoice.
+
+### Changed
+- **Breaking**: `tool`, `resource`, `resource_template`, `prompt` records have a new `icon` field. Code constructing these records directly must add `icon = None`.
+- **Breaking**: `version_features` has new `has_tasks` and `has_icons` fields.
+- `create_message_params` has new `tools` and `tool_choice` fields (default `None`).
+
 ## [0.9.1] - 2026-03-09
 
 ### Changed
