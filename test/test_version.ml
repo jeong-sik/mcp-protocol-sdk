@@ -77,20 +77,23 @@ let test_features_base () =
   Alcotest.(check bool) "no sampling" false f.has_sampling;
   Alcotest.(check bool) "no elicitation" false f.has_elicitation;
   Alcotest.(check bool) "no streamable" false f.has_streamable_http;
-  Alcotest.(check bool) "no tasks" false f.has_tasks
+  Alcotest.(check bool) "no tasks" false f.has_tasks;
+  Alcotest.(check bool) "no icons" false f.has_icons
 
 let test_features_2025_03_26 () =
   let f = Version.features_of_version "2025-03-26" in
   Alcotest.(check bool) "has_elicitation" true f.has_elicitation;
   Alcotest.(check bool) "has_streamable" true f.has_streamable_http;
-  Alcotest.(check bool) "no sampling" false f.has_sampling
+  Alcotest.(check bool) "no sampling" false f.has_sampling;
+  Alcotest.(check bool) "no icons" false f.has_icons
 
 let test_features_latest () =
   let f = Version.features_of_version "2025-11-25" in
   Alcotest.(check bool) "has_sampling" true f.has_sampling;
   Alcotest.(check bool) "has_elicitation" true f.has_elicitation;
   Alcotest.(check bool) "has_streamable" true f.has_streamable_http;
-  Alcotest.(check bool) "has_tasks" true f.has_tasks
+  Alcotest.(check bool) "has_tasks" true f.has_tasks;
+  Alcotest.(check bool) "has_icons" true f.has_icons
 
 (* --- Suite --- *)
 

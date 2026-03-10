@@ -53,6 +53,7 @@ type tool = {
   input_schema: Yojson.Safe.t;
   title: string option;
   annotations: tool_annotations option;
+  icon: string option;
 }
 
 val tool_to_yojson : tool -> Yojson.Safe.t
@@ -125,6 +126,7 @@ type resource = {
   name: string;
   description: string option;
   mime_type: string option;
+  icon: string option;
 }
 
 val resource_to_yojson : resource -> Yojson.Safe.t
@@ -135,6 +137,7 @@ type resource_template = {
   name: string;
   description: string option;
   mime_type: string option;
+  icon: string option;
 }
 
 val resource_template_to_yojson : resource_template -> Yojson.Safe.t
@@ -165,6 +168,7 @@ type prompt = {
   name: string;
   description: string option;
   arguments: prompt_argument list option;
+  icon: string option;
 }
 
 val prompt_to_yojson : prompt -> Yojson.Safe.t
@@ -278,9 +282,9 @@ val paginated_result_of_yojson : (Yojson.Safe.t -> ('a, string) result) -> Yojso
 
 (** {2 Convenience Constructors} *)
 
-val make_tool : name:string -> ?description:string -> ?title:string -> ?annotations:tool_annotations -> ?input_schema:Yojson.Safe.t -> unit -> tool
-val make_resource : uri:string -> name:string -> ?description:string -> ?mime_type:string -> unit -> resource
-val make_prompt : name:string -> ?description:string -> ?arguments:prompt_argument list -> unit -> prompt
+val make_tool : name:string -> ?description:string -> ?title:string -> ?annotations:tool_annotations -> ?icon:string -> ?input_schema:Yojson.Safe.t -> unit -> tool
+val make_resource : uri:string -> name:string -> ?description:string -> ?mime_type:string -> ?icon:string -> unit -> resource
+val make_prompt : name:string -> ?description:string -> ?arguments:prompt_argument list -> ?icon:string -> unit -> prompt
 
 (** {2 Tool Result Helpers} *)
 
@@ -357,6 +361,7 @@ val elicitation_schema_of_yojson : Yojson.Safe.t -> (elicitation_schema, string)
 type elicitation_params = {
   message: string;
   requested_schema: elicitation_schema option;
+  mode: string option;
 }
 
 val elicitation_params_to_yojson : elicitation_params -> Yojson.Safe.t

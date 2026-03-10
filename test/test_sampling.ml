@@ -105,6 +105,8 @@ let test_create_message_params_roundtrip () =
     max_tokens = 1024;
     stop_sequences = Some ["END"];
     metadata = Some (`Assoc [("key", `String "val")]);
+    tools = None;
+    tool_choice = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   match Sampling.create_message_params_of_yojson j with
@@ -126,6 +128,8 @@ let test_create_message_params_minimal () =
     max_tokens = 100;
     stop_sequences = None;
     metadata = None;
+    tools = None;
+    tool_choice = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   match Sampling.create_message_params_of_yojson j with
@@ -162,6 +166,57 @@ let test_create_message_result_no_stop () =
   let open Yojson.Safe.Util in
   Alcotest.(check json) "no stopReason" `Null (member "stopReason" j)
 
+(* --- Sampling tool calling (SEP-1577) --- *)
+
+let test_create_message_params_with_tools () =
+  let tool_def = `Assoc [
+    ("name", `String "get_weather");
+    ("inputSchema", `Assoc [("type", `String "object")]);
+  ] in
+  let params : Sampling.create_message_params = {
+    messages = [
+      { role = User; content = Text { type_ = "text"; text = "Weather?" } };
+    ];
+    model_preferences = None;
+    system_prompt = None;
+    include_context = None;
+    temperature = None;
+    max_tokens = 512;
+    stop_sequences = None;
+    metadata = None;
+    tools = Some (`List [tool_def]);
+    tool_choice = Some (`Assoc [("type", `String "auto")]);
+  } in
+  let j = Sampling.create_message_params_to_yojson params in
+  match Sampling.create_message_params_of_yojson j with
+  | Ok p' ->
+    Alcotest.(check bool) "tools present" true (Option.is_some p'.tools);
+    Alcotest.(check bool) "tool_choice present" true (Option.is_some p'.tool_choice)
+  | Error e -> Alcotest.fail e
+
+let test_create_message_params_no_tools () =
+  let params : Sampling.create_message_params = {
+    messages = [];
+    model_preferences = None;
+    system_prompt = None;
+    include_context = None;
+    temperature = None;
+    max_tokens = 100;
+    stop_sequences = None;
+    metadata = None;
+    tools = None;
+    tool_choice = None;
+  } in
+  let j = Sampling.create_message_params_to_yojson params in
+  let open Yojson.Safe.Util in
+  (* tools and toolChoice should not appear in JSON when None *)
+  (match j with
+   | `Assoc fields ->
+     Alcotest.(check bool) "no tools key" false (List.mem_assoc "tools" fields);
+     Alcotest.(check bool) "no toolChoice key" false (List.mem_assoc "toolChoice" fields)
+   | _ -> Alcotest.fail "expected object");
+  ignore (member "maxTokens" j)
+
 (* --- Suite --- *)
 
 let () =
@@ -185,6 +240,8 @@ let () =
     "create_message_params", [
       Alcotest.test_case "roundtrip" `Quick test_create_message_params_roundtrip;
       Alcotest.test_case "minimal" `Quick test_create_message_params_minimal;
+      Alcotest.test_case "with tools" `Quick test_create_message_params_with_tools;
+      Alcotest.test_case "no tools omitted" `Quick test_create_message_params_no_tools;
     ];
     "create_message_result", [
       Alcotest.test_case "roundtrip" `Quick test_create_message_result_roundtrip;

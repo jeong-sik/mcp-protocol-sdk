@@ -55,6 +55,7 @@ type version_features = {
   has_elicitation: bool;
   has_streamable_http: bool;
   has_tasks: bool;
+  has_icons: bool;
 }
 
 let features_of_version version =
@@ -66,8 +67,9 @@ let features_of_version version =
     has_elicitation = false;
     has_streamable_http = false;
     has_tasks = false;
+    has_icons = false;
   } in
   match version with
   | "2024-11-05" -> base
   | "2025-03-26" -> { base with has_elicitation = true; has_streamable_http = true }
-  | "2025-11-25" | _ -> { base with has_sampling = true; has_elicitation = true; has_streamable_http = true; has_tasks = true }
+  | "2025-11-25" | _ -> { base with has_sampling = true; has_elicitation = true; has_streamable_http = true; has_tasks = true; has_icons = true }

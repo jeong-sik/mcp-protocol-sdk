@@ -80,6 +80,7 @@ type tool = {
   input_schema: Yojson.Safe.t;   [@key "inputSchema"]
   title: string option;          [@default None]
   annotations: tool_annotations option; [@default None]
+  icon: string option;           [@default None]
 }
 [@@deriving yojson]
 
@@ -315,6 +316,7 @@ type resource = {
   name: string;
   description: string option; [@default None]
   mime_type: string option; [@default None]
+  icon: string option; [@default None]
 }
 [@@deriving yojson]
 
@@ -324,6 +326,7 @@ type resource_template = {
   name: string;
   description: string option; [@default None]
   mime_type: string option; [@default None]
+  icon: string option; [@default None]
 }
 [@@deriving yojson]
 
@@ -351,6 +354,7 @@ type prompt = {
   name: string;
   description: string option; [@default None]
   arguments: prompt_argument list option; [@default None]
+  icon: string option; [@default None]
 }
 [@@deriving yojson]
 
@@ -487,17 +491,17 @@ let paginated_result_of_yojson item_of_yojson = function
 (** {2 Convenience Constructors} *)
 
 (** Create a tool definition *)
-let make_tool ~name ?description ?title ?annotations
+let make_tool ~name ?description ?title ?annotations ?icon
     ?(input_schema = `Assoc [("type", `String "object")]) () =
-  { name; description; input_schema; title; annotations }
+  { name; description; input_schema; title; annotations; icon }
 
 (** Create a resource definition *)
-let make_resource ~uri ~name ?description ?mime_type () =
-  { uri; name; description; mime_type }
+let make_resource ~uri ~name ?description ?mime_type ?icon () =
+  { uri; name; description; mime_type; icon }
 
 (** Create a prompt definition *)
-let make_prompt ~name ?description ?arguments () =
-  { name; description; arguments }
+let make_prompt ~name ?description ?arguments ?icon () =
+  { name; description; arguments; icon }
 
 (** {2 Tool Result Helpers} *)
 
@@ -662,12 +666,17 @@ let elicitation_schema_of_yojson = function
 type elicitation_params = {
   message: string;
   requested_schema: elicitation_schema option; [@default None]
+  mode: string option;
 }
 
 let elicitation_params_to_yojson (p : elicitation_params) =
   let fields = [("message", `String p.message)] in
   let fields = match p.requested_schema with
     | Some s -> ("requestedSchema", elicitation_schema_to_yojson s) :: fields
+    | None -> fields
+  in
+  let fields = match p.mode with
+    | Some m -> ("mode", `String m) :: fields
     | None -> fields
   in
   `Assoc fields
@@ -682,7 +691,11 @@ let elicitation_params_of_yojson = function
       | Some j -> (match elicitation_schema_of_yojson j with Ok s -> Some s | Error _ -> None)
       | None -> None
     in
-    Result.map (fun message -> { message; requested_schema }) message
+    let mode = match List.assoc_opt "mode" fields with
+      | Some (`String s) -> Some s
+      | _ -> None
+    in
+    Result.map (fun message -> { message; requested_schema; mode }) message
   | _ -> Error "elicitation_params: expected object"
 
 (** User response action for elicitation *)
