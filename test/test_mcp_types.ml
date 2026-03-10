@@ -827,6 +827,20 @@ let test_resource_with_icon () =
     Alcotest.(check (option string)) "icon" (Some "data:image/svg+xml,<svg/>") decoded.icon
   | Error e -> Alcotest.fail e
 
+let test_resource_template_with_icon () =
+  let t : Mcp_types.resource_template = {
+    uri_template = "file:///{path}";
+    name = "icon_tmpl";
+    description = None;
+    mime_type = None;
+    icon = Some "https://example.com/template.png";
+  } in
+  let j = Mcp_types.resource_template_to_yojson t in
+  match Mcp_types.resource_template_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check (option string)) "icon" (Some "https://example.com/template.png") decoded.icon
+  | Error e -> Alcotest.fail e
+
 let test_prompt_with_icon () =
   let p : Mcp_types.prompt = {
     name = "icon_prompt";
@@ -971,6 +985,7 @@ let () =
     "icons", [
       Alcotest.test_case "tool with icon" `Quick test_tool_with_icon;
       Alcotest.test_case "resource with icon" `Quick test_resource_with_icon;
+      Alcotest.test_case "resource_template with icon" `Quick test_resource_template_with_icon;
       Alcotest.test_case "prompt with icon" `Quick test_prompt_with_icon;
     ];
     "completion_context", [
