@@ -72,6 +72,14 @@ let ping = "ping"
 
 let elicitation_create = "elicitation/create"
 
+(** {2 Tasks (experimental, 2025-11-25)} *)
+
+let tasks_get = "tasks/get"
+let tasks_result = "tasks/result"
+let tasks_list = "tasks/list"
+let tasks_cancel = "tasks/cancel"
+let tasks_status = "notifications/tasks/status"
+
 (** {2 Utility} *)
 
 (** Check if a method string is a notification (no response expected). *)

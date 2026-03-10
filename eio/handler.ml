@@ -25,6 +25,13 @@ type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.
 type completion_handler =
   Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
 
+type task_handlers = {
+  get: context -> string -> (Mcp_types.task, string) result;
+  result: context -> string -> (Yojson.Safe.t, string) result;
+  list: context -> string option -> (Mcp_types.task list * string option, string) result;
+  cancel: context -> string -> (Mcp_types.task, string) result;
+}
+
 type registered_tool = {
   tool: Mcp_types.tool;
   handler: tool_handler;
@@ -48,6 +55,7 @@ type t = {
   resources: registered_resource list;
   prompts: registered_prompt list;
   completion_handler: completion_handler option;
+  task_handlers: task_handlers option;
   mutable subscribed_uris: StringSet.t;
 }
 
@@ -55,6 +63,7 @@ let create ~name ~version ?instructions () =
   { name; version; instructions;
     tools = []; resources = []; prompts = [];
     completion_handler = None;
+    task_handlers = None;
     subscribed_uris = StringSet.empty }
 
 let add_tool tool handler s =
@@ -68,6 +77,9 @@ let add_prompt prompt handler s =
 
 let add_completion_handler handler s =
   { s with completion_handler = Some handler }
+
+let add_task_handlers handlers s =
+  { s with task_handlers = Some handlers }
 
 (* ── shared client helpers ────────────────────────────── *)
 
@@ -132,9 +144,20 @@ let server_capabilities s =
     | Some _ -> Some (`Assoc [])
     | None -> None
   in
-  let experimental = match completion_cap with
-    | Some c -> Some (`Assoc [("completion", c)])
+  let tasks_cap = match s.task_handlers with
+    | Some _ -> Some (`Assoc [
+        ("list", `Bool true);
+        ("cancel", `Bool true);
+      ])
     | None -> None
+  in
+  let experimental_fields =
+    (match completion_cap with Some c -> [("completion", c)] | None -> []) @
+    (match tasks_cap with Some t -> [("tasks", t)] | None -> [])
+  in
+  let experimental = match experimental_fields with
+    | [] -> None
+    | fields -> Some (`Assoc fields)
   in
   Mcp_types.{
     tools = tools_cap;
@@ -394,6 +417,106 @@ let handle_completion_complete s id params =
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
         ~message:"Invalid completion/complete params" ()
 
+(* ── tasks handlers ──────────────────────────────────── *)
+
+let handle_tasks_get s ctx id params =
+  match s.task_handlers with
+  | None ->
+    Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
+      ~message:"No task handlers registered" ()
+  | Some th ->
+    match params with
+    | Some (`Assoc fields) ->
+      begin match List.assoc_opt "taskId" fields with
+      | Some (`String task_id) ->
+        begin match th.get ctx task_id with
+        | Ok task ->
+          Jsonrpc.make_response ~id ~result:(Mcp_types.task_to_yojson task)
+        | Error msg ->
+          Jsonrpc.make_error ~id ~code:Error_codes.internal_error ~message:msg ()
+        end
+      | _ ->
+        Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+          ~message:"Missing 'taskId' in tasks/get params" ()
+      end
+    | _ ->
+      Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+        ~message:"Invalid tasks/get params" ()
+
+let handle_tasks_result s ctx id params =
+  match s.task_handlers with
+  | None ->
+    Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
+      ~message:"No task handlers registered" ()
+  | Some th ->
+    match params with
+    | Some (`Assoc fields) ->
+      begin match List.assoc_opt "taskId" fields with
+      | Some (`String task_id) ->
+        begin match th.result ctx task_id with
+        | Ok result_json ->
+          Jsonrpc.make_response ~id ~result:result_json
+        | Error msg ->
+          Jsonrpc.make_error ~id ~code:Error_codes.internal_error ~message:msg ()
+        end
+      | _ ->
+        Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+          ~message:"Missing 'taskId' in tasks/result params" ()
+      end
+    | _ ->
+      Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+        ~message:"Invalid tasks/result params" ()
+
+let handle_tasks_list s ctx id params =
+  match s.task_handlers with
+  | None ->
+    Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
+      ~message:"No task handlers registered" ()
+  | Some th ->
+    let cursor = match params with
+      | Some (`Assoc fields) ->
+        begin match List.assoc_opt "cursor" fields with
+        | Some (`String c) -> Some c | _ -> None
+        end
+      | _ -> None
+    in
+    begin match th.list ctx cursor with
+    | Ok (tasks, next_cursor) ->
+      let tasks_json = List.map Mcp_types.task_to_yojson tasks in
+      let fields = [("tasks", `List tasks_json)] in
+      let fields = match next_cursor with
+        | Some c -> ("nextCursor", `String c) :: fields
+        | None -> fields
+      in
+      Jsonrpc.make_response ~id ~result:(`Assoc fields)
+    | Error msg ->
+      Jsonrpc.make_error ~id ~code:Error_codes.internal_error ~message:msg ()
+    end
+
+let handle_tasks_cancel s ctx id params =
+  match s.task_handlers with
+  | None ->
+    Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
+      ~message:"No task handlers registered" ()
+  | Some th ->
+    match params with
+    | Some (`Assoc fields) ->
+      begin match List.assoc_opt "taskId" fields with
+      | Some (`String task_id) ->
+        begin match th.cancel ctx task_id with
+        | Ok task ->
+          Jsonrpc.make_response ~id ~result:(Mcp_types.task_to_yojson task)
+        | Error msg ->
+          Jsonrpc.make_error ~id ~code:Error_codes.internal_error ~message:msg ()
+        end
+      | _ ->
+        Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+          ~message:"Missing 'taskId' in tasks/cancel params" ()
+      end
+    | _ ->
+      Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
+        ~message:"Invalid tasks/cancel params" ()
+
 (* ── dispatch ─────────────────────────────────────────── *)
 
 let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message option =
@@ -424,6 +547,14 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
         handle_logging_set_level log_level_ref req.id req.params
       | m when m = Notifications.completion_complete ->
         handle_completion_complete s req.id req.params
+      | m when m = Notifications.tasks_get ->
+        handle_tasks_get s ctx req.id req.params
+      | m when m = Notifications.tasks_result ->
+        handle_tasks_result s ctx req.id req.params
+      | m when m = Notifications.tasks_list ->
+        handle_tasks_list s ctx req.id req.params
+      | m when m = Notifications.tasks_cancel ->
+        handle_tasks_cancel s ctx req.id req.params
       | _ ->
         Jsonrpc.make_error ~id:req.id
           ~code:Error_codes.method_not_found

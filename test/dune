@@ -11,7 +11,8 @@
   test_logging
   test_sampling
   test_backward_compat
-  test_notifications)
+  test_notifications
+  test_tasks)
  (libraries mcp_protocol alcotest))
 
 (tests

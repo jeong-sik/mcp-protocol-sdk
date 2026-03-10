@@ -21,6 +21,7 @@ type version_features = {
   has_sampling: bool;
   has_elicitation: bool;
   has_streamable_http: bool;
+  has_tasks: bool;
 }
 
 val features_of_version : string -> version_features

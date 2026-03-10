@@ -19,6 +19,7 @@ type tool_handler = Handler.tool_handler
 type resource_handler = Handler.resource_handler
 type prompt_handler = Handler.prompt_handler
 type completion_handler = Handler.completion_handler
+type task_handlers = Handler.task_handlers
 
 (* ── server type ─────────────────────────────────────── *)
 
@@ -47,6 +48,9 @@ let add_prompt prompt handler s =
 
 let add_completion_handler handler s =
   { s with handler = Handler.add_completion_handler handler s.handler }
+
+let add_task_handlers handlers s =
+  { s with handler = Handler.add_task_handlers handlers s.handler }
 
 (* ── notification sending ────────────────────────────── *)
 
