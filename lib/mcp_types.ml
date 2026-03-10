@@ -778,7 +778,7 @@ let task_to_yojson (t : task) =
     | Some m -> ("statusMessage", `String m) :: fields | None -> fields
   in
   let fields = match t.ttl with
-    | Some v -> ("ttl", `Int v) :: fields | None -> ("ttl", `Null) :: fields
+    | Some v -> ("ttl", `Int v) :: fields | None -> fields
   in
   let fields = match t.poll_interval with
     | Some v -> ("pollInterval", `Int v) :: fields | None -> fields

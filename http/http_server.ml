@@ -32,6 +32,11 @@ let add_prompt prompt handler s =
 let add_completion_handler handler s =
   { s with handler = Mcp_protocol_eio.Handler.add_completion_handler handler s.handler }
 
+type task_handlers = Mcp_protocol_eio.Handler.task_handlers
+
+let add_task_handlers handlers s =
+  { s with handler = Mcp_protocol_eio.Handler.add_task_handlers handlers s.handler }
+
 (* ── helpers ─────────────────────────────────── *)
 
 let json_content_type = "application/json"

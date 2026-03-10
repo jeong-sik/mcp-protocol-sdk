@@ -98,6 +98,21 @@ val list_prompts : ?cursor:string -> t -> (Mcp_types.prompt list, string) result
 val get_prompt : t -> name:string -> ?arguments:(string * string) list -> unit ->
   (Mcp_types.prompt_result, string) result
 
+(** {2 Tasks (experimental, 2025-11-25)} *)
+
+(** Get the current state of a task. *)
+val get_task : t -> task_id:string -> (Mcp_types.task, string) result
+
+(** Get the result of a completed task. Blocks until the task completes. *)
+val get_task_result : t -> task_id:string -> (Yojson.Safe.t, string) result
+
+(** List tasks on the server.
+    @param cursor Optional pagination cursor from a previous response. *)
+val list_tasks : ?cursor:string -> t -> (Mcp_types.task list, string) result
+
+(** Cancel a running task. *)
+val cancel_task : t -> task_id:string -> (Mcp_types.task, string) result
+
 (** {2 Cleanup} *)
 
 (** Close the client. Sends DELETE to terminate the server session. *)

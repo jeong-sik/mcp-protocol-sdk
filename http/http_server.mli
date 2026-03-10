@@ -42,6 +42,12 @@ val add_prompt : Mcp_types.prompt -> Mcp_protocol_eio.Handler.prompt_handler -> 
 (** Register a completion handler. *)
 val add_completion_handler : Mcp_protocol_eio.Handler.completion_handler -> t -> t
 
+(** Task handler callbacks. See {!Mcp_protocol_eio.Handler.task_handlers}. *)
+type task_handlers = Mcp_protocol_eio.Handler.task_handlers
+
+(** Register task handlers for tasks/get, tasks/result, tasks/list, tasks/cancel. *)
+val add_task_handlers : task_handlers -> t -> t
+
 (** {2 Running} *)
 
 (** [callback t ~prefix] returns a cohttp-eio server callback that routes

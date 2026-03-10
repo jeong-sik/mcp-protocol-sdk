@@ -26,10 +26,10 @@ type completion_handler =
   Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
 
 type task_handlers = {
-  get: string -> (Mcp_types.task, string) result;
-  result: string -> (Yojson.Safe.t, string) result;
-  list: string option -> (Mcp_types.task list * string option, string) result;
-  cancel: string -> (Mcp_types.task, string) result;
+  get: context -> string -> (Mcp_types.task, string) result;
+  result: context -> string -> (Yojson.Safe.t, string) result;
+  list: context -> string option -> (Mcp_types.task list * string option, string) result;
+  cancel: context -> string -> (Mcp_types.task, string) result;
 }
 
 type registered_tool = {
@@ -419,7 +419,7 @@ let handle_completion_complete s id params =
 
 (* ── tasks handlers ──────────────────────────────────── *)
 
-let handle_tasks_get s id params =
+let handle_tasks_get s ctx id params =
   match s.task_handlers with
   | None ->
     Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
@@ -429,7 +429,7 @@ let handle_tasks_get s id params =
     | Some (`Assoc fields) ->
       begin match List.assoc_opt "taskId" fields with
       | Some (`String task_id) ->
-        begin match th.get task_id with
+        begin match th.get ctx task_id with
         | Ok task ->
           Jsonrpc.make_response ~id ~result:(Mcp_types.task_to_yojson task)
         | Error msg ->
@@ -443,7 +443,7 @@ let handle_tasks_get s id params =
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
         ~message:"Invalid tasks/get params" ()
 
-let handle_tasks_result s id params =
+let handle_tasks_result s ctx id params =
   match s.task_handlers with
   | None ->
     Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
@@ -453,7 +453,7 @@ let handle_tasks_result s id params =
     | Some (`Assoc fields) ->
       begin match List.assoc_opt "taskId" fields with
       | Some (`String task_id) ->
-        begin match th.result task_id with
+        begin match th.result ctx task_id with
         | Ok result_json ->
           Jsonrpc.make_response ~id ~result:result_json
         | Error msg ->
@@ -467,7 +467,7 @@ let handle_tasks_result s id params =
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
         ~message:"Invalid tasks/result params" ()
 
-let handle_tasks_list s id params =
+let handle_tasks_list s ctx id params =
   match s.task_handlers with
   | None ->
     Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
@@ -480,7 +480,7 @@ let handle_tasks_list s id params =
         end
       | _ -> None
     in
-    begin match th.list cursor with
+    begin match th.list ctx cursor with
     | Ok (tasks, next_cursor) ->
       let tasks_json = List.map Mcp_types.task_to_yojson tasks in
       let fields = [("tasks", `List tasks_json)] in
@@ -493,7 +493,7 @@ let handle_tasks_list s id params =
       Jsonrpc.make_error ~id ~code:Error_codes.internal_error ~message:msg ()
     end
 
-let handle_tasks_cancel s id params =
+let handle_tasks_cancel s ctx id params =
   match s.task_handlers with
   | None ->
     Jsonrpc.make_error ~id ~code:Error_codes.method_not_found
@@ -503,7 +503,7 @@ let handle_tasks_cancel s id params =
     | Some (`Assoc fields) ->
       begin match List.assoc_opt "taskId" fields with
       | Some (`String task_id) ->
-        begin match th.cancel task_id with
+        begin match th.cancel ctx task_id with
         | Ok task ->
           Jsonrpc.make_response ~id ~result:(Mcp_types.task_to_yojson task)
         | Error msg ->
@@ -548,13 +548,13 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
       | m when m = Notifications.completion_complete ->
         handle_completion_complete s req.id req.params
       | m when m = Notifications.tasks_get ->
-        handle_tasks_get s req.id req.params
+        handle_tasks_get s ctx req.id req.params
       | m when m = Notifications.tasks_result ->
-        handle_tasks_result s req.id req.params
+        handle_tasks_result s ctx req.id req.params
       | m when m = Notifications.tasks_list ->
-        handle_tasks_list s req.id req.params
+        handle_tasks_list s ctx req.id req.params
       | m when m = Notifications.tasks_cancel ->
-        handle_tasks_cancel s req.id req.params
+        handle_tasks_cancel s ctx req.id req.params
       | _ ->
         Jsonrpc.make_error ~id:req.id
           ~code:Error_codes.method_not_found
