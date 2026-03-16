@@ -37,11 +37,23 @@ let extract_bearer_token request =
 
 (* ── WWW-Authenticate response (RFC 6750 Section 3) ── *)
 
+(** Escape double quotes and backslashes for RFC 7230 quoted-string. *)
+let escape_quoted_string s =
+  let buf = Buffer.create (String.length s) in
+  String.iter (fun c ->
+    match c with
+    | '"' -> Buffer.add_string buf "\\\""
+    | '\\' -> Buffer.add_string buf "\\\\"
+    | c when Char.code c < 0x20 -> () (* strip control characters *)
+    | c -> Buffer.add_char buf c
+  ) s;
+  Buffer.contents buf
+
 let www_authenticate_header config ~error ~description =
   let parts = [
-    Printf.sprintf "Bearer realm=\"%s\"" config.resource_server;
-    Printf.sprintf "error=\"%s\"" error;
-    Printf.sprintf "error_description=\"%s\"" description;
+    Printf.sprintf "Bearer realm=\"%s\"" (escape_quoted_string config.resource_server);
+    Printf.sprintf "error=\"%s\"" (escape_quoted_string error);
+    Printf.sprintf "error_description=\"%s\"" (escape_quoted_string description);
   ] in
   let parts = if config.required_scopes <> [] then
     parts @ [Printf.sprintf "scope=\"%s\"" (String.concat " " config.required_scopes)]

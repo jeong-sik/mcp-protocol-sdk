@@ -1,7 +1,7 @@
 (library
  (name mcp_protocol_http)
  (public_name mcp_protocol_http)
- (libraries mcp_protocol mcp_protocol_eio eio eio.unix yojson cohttp-eio uri base64 digestif)
+ (libraries mcp_protocol mcp_protocol_eio eio eio.unix yojson cohttp-eio uri base64 digestif mirage-crypto-rng mirage-crypto-rng.unix)
  (modules sse sse_flow http_session http_server http_client auth_middleware oauth_client)
  (ocamlopt_flags (:standard -w -69))
  (ocamlc_flags (:standard -w -69)))

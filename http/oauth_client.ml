@@ -28,13 +28,20 @@ let base64url_encode bytes =
   let b64 = Base64.encode_exn ~pad:false bytes in
   String.map (function '+' -> '-' | '/' -> '_' | c -> c) b64
 
-(** Generate 32 random bytes for a code verifier *)
+(** Ensure CSPRNG is initialized (idempotent). *)
+let ensure_rng_initialized =
+  let initialized = ref false in
+  fun () ->
+    if not !initialized then begin
+      Mirage_crypto_rng_unix.use_default ();
+      initialized := true
+    end
+
+(** Generate 32 cryptographically secure random bytes for a code verifier.
+    Uses Mirage_crypto_rng (CSPRNG) — Random.int is NOT safe for OAuth. *)
 let generate_random_bytes () =
-  let buf = Bytes.create 32 in
-  for i = 0 to 31 do
-    Bytes.set buf i (Char.chr (Random.int 256))
-  done;
-  Bytes.to_string buf
+  ensure_rng_initialized ();
+  Mirage_crypto_rng.generate 32
 
 let generate_pkce () =
   let verifier = base64url_encode (generate_random_bytes ()) in

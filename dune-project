@@ -62,6 +62,7 @@ Provides SSE encoding/broadcasting, session management, and HTTP server/client."
   (uri (>= 4.0))
   (base64 (>= 3.0))
   (digestif (>= 1.0))
+  (mirage-crypto-rng (>= 1.0))
   (yojson (>= 2.0))
   (alcotest :with-test)
   (eio_main :with-test)))
