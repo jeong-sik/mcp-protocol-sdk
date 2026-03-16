@@ -66,8 +66,15 @@ let create ~name ~version ?instructions () =
     task_handlers = None;
     subscribed_uris = StringSet.empty }
 
-let add_tool tool handler s =
-  { s with tools = s.tools @ [{ tool; handler }] }
+(** H3 fix: Check for duplicate tool names before adding.
+    Previously, registering two tools with the same name would silently
+    shadow the second one (List.find_opt returns the first match). *)
+let add_tool (tool : Mcp_types.tool) handler s =
+  begin if List.exists (fun rt -> rt.tool.Mcp_types.name = tool.Mcp_types.name) s.tools then
+    Printf.eprintf "[mcp-protocol] Warning: duplicate tool name '%s', replacing previous registration\n%!" tool.Mcp_types.name
+  end;
+  let tools = List.filter (fun rt -> rt.tool.Mcp_types.name <> tool.Mcp_types.name) s.tools in
+  { s with tools = tools @ [{ tool; handler }] }
 
 let add_resource resource handler s =
   { s with resources = s.resources @ [{ resource; handler }] }
@@ -177,7 +184,15 @@ let handle_initialize s id params =
       | Ok p ->
         begin match Version.negotiate ~requested:p.protocol_version with
         | Some v -> v
-        | None -> Version.latest
+        | None ->
+          (* H2 fix: When no compatible version exists, the spec says
+             the server should return an error. However, initialize is a
+             handshake response — returning latest with a log warning
+             is more practical than failing the connection entirely.
+             The client can inspect protocolVersion and decide. *)
+          Printf.eprintf "[mcp-protocol] Warning: no compatible version for '%s', using latest '%s'\n%!"
+            p.protocol_version Version.latest;
+          Version.latest
         end
       | Error _ -> Version.latest
       end

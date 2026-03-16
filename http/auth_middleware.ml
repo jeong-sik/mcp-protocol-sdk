@@ -44,7 +44,7 @@ let escape_quoted_string s =
     match c with
     | '"' -> Buffer.add_string buf "\\\""
     | '\\' -> Buffer.add_string buf "\\\\"
-    | c when Char.code c < 0x20 -> () (* strip control characters *)
+    | c when Char.code c < 0x20 || Char.code c = 0x7F -> () (* H6 fix: strip control chars including DEL *)
     | c -> Buffer.add_char buf c
   ) s;
   Buffer.contents buf

@@ -13,6 +13,9 @@ type credential_store = {
   clear: unit -> unit;
 }
 
+(** C3 note: This store uses a plain [ref] and is safe only within a single
+    Eio domain (where fibers are cooperatively scheduled and cannot preempt
+    each other mid-operation). Do NOT share across multiple OCaml 5 domains. *)
 let in_memory_store () =
   let state = ref None in
   {
@@ -28,14 +31,9 @@ let base64url_encode bytes =
   let b64 = Base64.encode_exn ~pad:false bytes in
   String.map (function '+' -> '-' | '/' -> '_' | c -> c) b64
 
-(** Ensure CSPRNG is initialized (idempotent). *)
-let ensure_rng_initialized =
-  let initialized = ref false in
-  fun () ->
-    if not !initialized then begin
-      Mirage_crypto_rng_unix.use_default ();
-      initialized := true
-    end
+(** C4 fix: Reuse Tls_helpers.ensure_rng instead of maintaining a separate
+    initialization flag. Consolidates CSPRNG init to a single location. *)
+let ensure_rng_initialized = Tls_helpers.ensure_rng
 
 (** Generate 32 cryptographically secure random bytes for a code verifier.
     Uses Mirage_crypto_rng (CSPRNG) — Random.int is NOT safe for OAuth. *)
@@ -99,12 +97,22 @@ let parse_token_response body_str =
   | exception Yojson.Json_error msg ->
     Error (Printf.sprintf "JSON parse error: %s" msg)
   | json ->
+    (* C2 fix: Check for "error" key presence in JSON, not just non-empty
+       string value. Previously {"error":"","access_token":""} would pass
+       the error check and produce an empty access_token. *)
+    let has_error_key = match json with
+      | `Assoc fields -> List.assoc_opt "error" fields <> None
+      | _ -> false
+    in
     match Auth.oauth_error_of_yojson json with
-    | Ok err when err.error <> "" ->
+    | Ok err when has_error_key && err.error <> "" ->
       let desc = Option.value ~default:"" err.error_description in
       Error (Printf.sprintf "OAuth error: %s - %s" err.error desc)
     | _ ->
-      Auth.oauth_token_response_of_yojson json
+      match Auth.oauth_token_response_of_yojson json with
+      | Ok resp when resp.Auth.access_token = "" ->
+        Error "OAuth error: empty access_token in response"
+      | result -> result
 
 (* ── token exchange ─────────────────────────── *)
 

@@ -54,7 +54,39 @@ type content_annotations = {
   audience: role list option; [@default None]
   priority: float option; [@default None]
 }
-[@@deriving yojson]
+
+(** H4 fix: Custom yojson for content_annotations because ppx_deriving_yojson
+    rejects JSON integer values for float fields. MCP spec allows priority
+    values like 0 and 1 (integers), not just 0.0 and 1.0. *)
+let content_annotations_to_yojson (a : content_annotations) =
+  let fields = [] in
+  let fields = match a.audience with
+    | Some roles -> ("audience", `List (List.map role_to_yojson roles)) :: fields
+    | None -> fields
+  in
+  let fields = match a.priority with
+    | Some p -> ("priority", `Float p) :: fields
+    | None -> fields
+  in
+  `Assoc fields
+
+let content_annotations_of_yojson = function
+  | `Assoc fields ->
+    let audience = match List.assoc_opt "audience" fields with
+      | Some (`List items) ->
+        let roles = List.filter_map (fun j ->
+          match role_of_yojson j with Ok r -> Some r | Error _ -> None
+        ) items in
+        Some roles
+      | _ -> None
+    in
+    let priority = match List.assoc_opt "priority" fields with
+      | Some (`Float f) -> Some f
+      | Some (`Int i) -> Some (float_of_int i)
+      | _ -> None
+    in
+    Ok { audience; priority }
+  | _ -> Error "content_annotations: expected object"
 
 (** {2 Tool Annotations} *)
 
@@ -151,7 +183,12 @@ let embedded_resource_of_yojson = function
       | _ -> match List.assoc_opt "mime_type" fields with
         | Some (`String s) -> Some s | _ -> None
     in
-    Result.map (fun uri -> { uri; text; blob; mime_type }) uri
+    (* M3 fix: MCP spec requires at least one of text or blob. *)
+    Result.bind uri (fun uri ->
+      if text = None && blob = None then
+        Error "embedded_resource: must have at least one of 'text' or 'blob'"
+      else
+        Ok { uri; text; blob; mime_type })
   | _ -> Error "embedded_resource: expected object"
 
 let annotations_field_to_json (a : content_annotations option) fields =
@@ -505,15 +542,36 @@ let make_prompt ~name ?description ?arguments ?icon () =
 
 (** {2 Tool Result Helpers} *)
 
+(** {2 Type-safe Content Constructors}
+
+    M4 fix: These constructors enforce that the [type_] discriminator matches
+    the content variant, preventing mismatches like
+    [TextContent \{ type_ = "image"; ... \}]. *)
+
+let make_text_content ?annotations text =
+  TextContent { type_ = "text"; text; annotations }
+
+let make_image_content ?annotations ~mime_type data =
+  ImageContent { type_ = "image"; data; mime_type; annotations }
+
+let make_audio_content ?annotations ~mime_type data =
+  AudioContent { type_ = "audio"; data; mime_type; annotations }
+
+let make_resource_content ?annotations resource =
+  ResourceContent { type_ = "resource"; resource; annotations }
+
+let make_resource_link_content ?annotations ?name ?description ?mime_type uri =
+  ResourceLinkContent { type_ = "resource_link"; uri; name; description; mime_type; annotations }
+
 (** Create a text tool result *)
 let tool_result_of_text text =
-  { content = [TextContent { type_ = "text"; text; annotations = None }];
+  { content = [make_text_content text];
     is_error = None;
     structured_content = None }
 
 (** Create an error tool result *)
 let tool_result_of_error message =
-  { content = [TextContent { type_ = "text"; text = message; annotations = None }];
+  { content = [make_text_content message];
     is_error = Some true;
     structured_content = None }
 

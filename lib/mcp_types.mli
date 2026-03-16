@@ -286,6 +286,17 @@ val make_tool : name:string -> ?description:string -> ?title:string -> ?annotati
 val make_resource : uri:string -> name:string -> ?description:string -> ?mime_type:string -> ?icon:string -> unit -> resource
 val make_prompt : name:string -> ?description:string -> ?arguments:prompt_argument list -> ?icon:string -> unit -> prompt
 
+(** {2 Type-safe Content Constructors}
+
+    These enforce that the discriminator [type_] field matches the variant,
+    preventing mismatches like [TextContent \{ type_ = "image"; ... \}]. *)
+
+val make_text_content : ?annotations:content_annotations -> string -> tool_content
+val make_image_content : ?annotations:content_annotations -> mime_type:string -> string -> tool_content
+val make_audio_content : ?annotations:content_annotations -> mime_type:string -> string -> tool_content
+val make_resource_content : ?annotations:content_annotations -> embedded_resource -> tool_content
+val make_resource_link_content : ?annotations:content_annotations -> ?name:string -> ?description:string -> ?mime_type:string -> string -> tool_content
+
 (** {2 Tool Result Helpers} *)
 
 val tool_result_of_text : string -> tool_result

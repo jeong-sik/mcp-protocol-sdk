@@ -38,5 +38,10 @@
  (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio alcotest yojson str unix))
 
 (tests
+ (names test_bug_fixes)
+ (libraries mcp_protocol mcp_protocol_eio mcp_protocol_http
+  eio eio_main cohttp-eio alcotest yojson unix))
+
+(tests
  (names test_oauth_discovery)
  (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio alcotest yojson str))
