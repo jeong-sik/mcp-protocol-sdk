@@ -256,12 +256,22 @@ let () =
     in
 
     (* 3. Generate PKCE and build authorization URL *)
-    let _verifier, challenge = Oauth_client.generate_pkce () in
+    let verifier, challenge = Oauth_client.generate_pkce () in
+    let state = Base64.encode_exn ~pad:false
+      (Mirage_crypto_rng.generate 16) in
     let auth_url = Oauth_client.build_authorization_url
       ~authorization_endpoint:metadata.authorization_endpoint
       ~client_id ~redirect_uri:"http://localhost:9999/callback"
-      ~scopes:["read"] ~state:"random" ~code_challenge:challenge () in
-    Printf.printf "Visit: %s\n" auth_url
+      ~scopes:["read"] ~state ~code_challenge:challenge () in
+    Printf.printf "Visit: %s\n" auth_url;
+
+    (* 4. After user authorizes, exchange code for tokens *)
+    (* let code = <received from redirect callback> in *)
+    ignore (Oauth_client.exchange_code ~net ~sw
+      ~token_endpoint:metadata.token_endpoint
+      ~client_id ~code:"AUTH_CODE_HERE"
+      ~redirect_uri:"http://localhost:9999/callback"
+      ~code_verifier:verifier)
 ```
 
 HTTPS is enabled automatically via `tls-eio` + system CA certificates.

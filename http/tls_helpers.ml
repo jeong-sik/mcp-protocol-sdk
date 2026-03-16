@@ -17,15 +17,20 @@ let https_authenticator () =
     match Tls.Config.client ~authenticator () with
     | Error (`Msg _ as msg) -> Error msg
     | Ok tls_config ->
-      let connect _uri socket =
-        Tls_eio.client_of_flow tls_config socket
+      let connect uri socket =
+        let host =
+          Uri.host uri
+          |> Option.map (fun h -> Domain_name.(of_string_exn h |> host_exn))
+        in
+        Tls_eio.client_of_flow tls_config ?host socket
       in
       Ok connect
 
 let make_client net =
   ensure_rng ();
-  let https = match https_authenticator () with
-    | Ok f -> Some f
-    | Error _ -> None
-  in
-  Cohttp_eio.Client.make ~https net
+  match https_authenticator () with
+  | Ok f ->
+    Cohttp_eio.Client.make ~https:(Some f) net
+  | Error (`Msg msg) ->
+    Printf.eprintf "[mcp-protocol-http] TLS initialization failed: %s. HTTPS unavailable.\n%!" msg;
+    Cohttp_eio.Client.make ~https:None net

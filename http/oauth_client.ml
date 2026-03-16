@@ -155,7 +155,21 @@ let get_json ~net ~sw ~url =
 
 (* ── OAuth Discovery (RFC 8414) ─────────────── *)
 
+(** Enforce HTTPS scheme for security-sensitive OAuth endpoints.
+    RFC 8414 and RFC 7591 require TLS. *)
+let require_https url context =
+  let uri = Uri.of_string url in
+  match Uri.scheme uri with
+  | Some "https" -> Ok ()
+  | Some "http" when Uri.host uri = Some "localhost"
+                   || Uri.host uri = Some "127.0.0.1" -> Ok () (* loopback exception for dev *)
+  | Some scheme -> Error (Printf.sprintf "%s requires HTTPS, got %s://" context scheme)
+  | None -> Error (Printf.sprintf "%s: missing URL scheme" context)
+
 let discover ~net ~sw ~issuer =
+  match require_https issuer "OAuth Discovery" with
+  | Error e -> Error e
+  | Ok () ->
   let well_known_url =
     let base = if String.length issuer > 0 && issuer.[String.length issuer - 1] = '/'
       then String.sub issuer 0 (String.length issuer - 1)
@@ -185,6 +199,9 @@ type client_registration_request = {
 }
 
 let register_client ~net ~sw ~registration_endpoint ~request =
+  match require_https registration_endpoint "Dynamic Client Registration" with
+  | Error e -> Error e
+  | Ok () ->
   let json = `Assoc [
     ("client_name", `String request.client_name);
     ("redirect_uris", `List (List.map (fun s -> `String s) request.redirect_uris));
