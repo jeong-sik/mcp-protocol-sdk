@@ -39,7 +39,7 @@ let () =
   let server =
     Mcp_protocol_eio.Server.create
       ~name:"echo-server"
-      ~version:"0.11.0"
+      ~version:"0.12.1"
       ~instructions:"A minimal echo server for testing the MCP Server framework."
       ()
     |> Mcp_protocol_eio.Server.add_tool echo_tool echo_handler

@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-03-16
+
+### Fixed
+- **C1**: JSON-RPC null ID vs absent ID — `List.assoc_opt` distinguishes `{"id":null}` (Request) from missing `id` (Notification).
+- **C2**: OAuth `parse_token_response` rejects empty `access_token` strings.
+- **C4**: CSPRNG `ensure_rng` consolidated to single `Tls_helpers.ensure_rng` (was duplicated in `oauth_client.ml`).
+- **H4**: `content_annotations.priority` accepts JSON integer values (e.g. `"priority": 1`), not only floats.
+- **H5**: HTTP POST callback parses JSON once (was parsing twice for auth check + dispatch).
+- **H6**: `WWW-Authenticate` header escaping strips DEL (0x7F) character per RFC 7230.
+- **M3**: `embedded_resource_of_yojson` requires at least one of `text` or `blob`.
+- **M5**: `Http_session.event_counter` uses `Atomic.t` for fiber-safe monotonic IDs.
+
+### Added
+- `make_text_content`, `make_image_content`, `make_audio_content`, `make_resource_content`, `make_resource_link_content` type-safe constructors (M4 fix: enforce correct `type_` discriminator).
+- `Tls_helpers.ensure_rng` exposed in `.mli`.
+- `Auth_middleware.escape_quoted_string` exposed in `.mli`.
+- 16 regression tests in `test/test_bug_fixes.ml`.
+
+### Changed
+- **H2**: Version negotiation logs warning when no compatible version found (was silent fallback to latest).
+- **H3**: `Handler.add_tool` detects duplicate tool names and replaces the previous registration with a warning (was silent shadowing).
+- **C3**: `in_memory_store` documents single-domain safety constraint.
+- **M1**: `Http_session.validate` documents pre-init acceptance intent.
+
+## [0.12.0] - 2026-03-15
+
+### Added
+- **OAuth Discovery** (RFC 8414): `Oauth_client.discover` fetches `.well-known/oauth-authorization-server` metadata.
+- **Dynamic Client Registration** (RFC 7591): `Oauth_client.register_client` for runtime client registration.
+- **HTTPS transport**: `Tls_helpers` module with system CA certificate support via `tls-eio` + `ca-certs`.
+- **OAuth 2.1 auth middleware**: `Auth_middleware` module implementing RFC 6750 bearer token verification, scope checking, `WWW-Authenticate` responses.
+- **Protected Resource Metadata** (RFC 9728): `GET /.well-known/oauth-protected-resource` endpoint.
+- HTTPS enforcement for OAuth endpoints (loopback exception for development).
+- `http_auth_server` example demonstrating OAuth-protected MCP server.
+
+### Changed
+- `Oauth_client.post_form` and `get_json` use `Tls_helpers.make_client` for HTTPS support.
+- `Http_server.create` accepts optional `?auth` parameter for OAuth configuration.
+
+## [0.11.0] - 2026-03-14
+
+### Added
+- **ppx_deriving_jsonschema** integration: `[@@deriving jsonschema]` for automatic JSON Schema generation from OCaml types.
+- **OAuth 2.1 client** (`Oauth_client`): PKCE (RFC 7636), token exchange, refresh, pluggable credential store.
+- `Auth` module: OAuth token types, error types, server metadata types.
+- `base64url_encode` for URL-safe base64 encoding.
+- `inject_bearer_token` helper for adding Authorization headers.
+- `test_ppx_schema.ml` and `test_auth.ml` test suites.
+
 ## [0.10.0] - 2026-03-11
 
 ### Added
@@ -223,6 +272,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Http_negotiation` module: Accept header parsing, transport negotiation.
 - `Version` module: protocol version handling and negotiation.
 
+[0.12.1]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jeong-sik/mcp-protocol-sdk/compare/v0.7.0...v0.8.0

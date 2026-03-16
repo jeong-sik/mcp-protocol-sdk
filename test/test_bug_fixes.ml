@@ -199,6 +199,40 @@ let test_m5_event_ids_monotonic () =
   Alcotest.(check string) "second" "1" id2;
   Alcotest.(check string) "third" "2" id3
 
+(* ── L2: state parameter helpers ──────────────── *)
+
+let test_l2_generate_state_length () =
+  let state = Oauth_client.generate_state () in
+  Alcotest.(check bool) "state is non-empty"
+    true (String.length state > 0)
+
+let test_l2_validate_state_match () =
+  let state = "abc123xyz" in
+  Alcotest.(check bool) "matching state"
+    true (Oauth_client.validate_state ~expected:state ~received:state)
+
+let test_l2_validate_state_mismatch () =
+  Alcotest.(check bool) "mismatched state"
+    false (Oauth_client.validate_state ~expected:"abc" ~received:"xyz")
+
+let test_l2_validate_state_length_mismatch () =
+  Alcotest.(check bool) "different length"
+    false (Oauth_client.validate_state ~expected:"short" ~received:"longer_string")
+
+(* ── L3: scope checking with StringSet ───────── *)
+
+let test_l3_scope_check_subset () =
+  Alcotest.(check bool) "subset passes"
+    true (Auth_middleware.check_scopes ~required:["read"] ~granted:["read"; "write"])
+
+let test_l3_scope_check_missing () =
+  Alcotest.(check bool) "missing scope fails"
+    false (Auth_middleware.check_scopes ~required:["admin"] ~granted:["read"; "write"])
+
+let test_l3_scope_check_empty_required () =
+  Alcotest.(check bool) "empty required passes"
+    true (Auth_middleware.check_scopes ~required:[] ~granted:["read"])
+
 (* ── Suite ────────────────────────────────────── *)
 
 let () =
@@ -234,5 +268,16 @@ let () =
     ];
     "M5_event_counter", [
       Alcotest.test_case "monotonic IDs" `Quick test_m5_event_ids_monotonic;
+    ];
+    "L2_state_param", [
+      Alcotest.test_case "generate non-empty" `Quick test_l2_generate_state_length;
+      Alcotest.test_case "validate match" `Quick test_l2_validate_state_match;
+      Alcotest.test_case "validate mismatch" `Quick test_l2_validate_state_mismatch;
+      Alcotest.test_case "validate length mismatch" `Quick test_l2_validate_state_length_mismatch;
+    ];
+    "L3_scope_check", [
+      Alcotest.test_case "subset passes" `Quick test_l3_scope_check_subset;
+      Alcotest.test_case "missing fails" `Quick test_l3_scope_check_missing;
+      Alcotest.test_case "empty required" `Quick test_l3_scope_check_empty_required;
     ];
   ]

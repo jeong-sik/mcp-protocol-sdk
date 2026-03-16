@@ -78,7 +78,7 @@ let () =
   let server =
     Mcp_protocol_http.Http_server.create
       ~name:"auth-echo-server"
-      ~version:"0.11.0"
+      ~version:"0.12.1"
       ~auth:auth_config
       ()
     |> Mcp_protocol_http.Http_server.add_tool echo_tool echo_handler

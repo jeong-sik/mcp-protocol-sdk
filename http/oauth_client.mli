@@ -98,6 +98,21 @@ val register_client :
   request:client_registration_request ->
   (string, string) result
 
+(** {2 CSRF State Parameter} *)
+
+(** Generate a cryptographically random state parameter for CSRF protection.
+    Returns a 32-character URL-safe base64 string. *)
+val generate_state : unit -> string
+
+(** Validate that the received state matches the expected state.
+    Uses constant-time comparison to prevent timing attacks. *)
+val validate_state : expected:string -> received:string -> bool
+
+(** {2 Configuration} *)
+
+(** Default maximum response body size for OAuth HTTP responses (1 MB). *)
+val default_max_response_size : int
+
 (** {2 Bearer Token Injection} *)
 
 (** Add a Bearer Authorization header to an HTTP request.
