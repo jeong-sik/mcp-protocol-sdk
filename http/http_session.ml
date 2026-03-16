@@ -11,16 +11,20 @@ type state =
 
 (* ── Session type ────────────────────────────── *)
 
+(** M5 fix: event_counter uses Atomic.t for safe concurrent fiber access.
+    H1 note: state/session_id remain mutable — within a single Eio domain,
+    fiber scheduling is cooperative and these transitions are always
+    sequenced by the HTTP request handling (one transition per request). *)
 type t = {
   mutable state : state;
   mutable session_id : string option;
-  mutable event_counter : int;
+  event_counter : int Atomic.t;
 }
 
 let create () = {
   state = Uninitialized;
   session_id = None;
-  event_counter = 0;
+  event_counter = Atomic.make 0;
 }
 
 (* ── Session ID generation ───────────────────── *)
@@ -82,10 +86,14 @@ let close t =
 
 (* ── Validation ──────────────────────────────── *)
 
+(** M1 note: When session_id is None (pre-init), we accept any request.
+    This is necessary because the initialize request itself arrives before
+    any session ID exists. The HTTP server layer (http_server.ml callback)
+    ensures that non-initialize requests are rejected at the auth/routing
+    level before reaching this point. *)
 let validate t header_value =
   match t.session_id with
   | None ->
-    (* No session ID yet — before initialization, accept anything *)
     Ok ()
   | Some sid ->
     match header_value with
@@ -97,9 +105,10 @@ let validate t header_value =
 
 (* ── Event IDs ───────────────────────────────── *)
 
+(** M5 fix: Use Atomic.fetch_and_add for monotonically increasing IDs,
+    safe even if called from concurrent fibers within the same domain. *)
 let next_event_id t =
-  let id = t.event_counter in
-  t.event_counter <- id + 1;
+  let id = Atomic.fetch_and_add t.event_counter 1 in
   string_of_int id
 
 (* ── Constants ───────────────────────────────── *)

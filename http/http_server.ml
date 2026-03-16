@@ -188,14 +188,15 @@ let dispatch_jsonrpc s json is_init : Cohttp_eio.Server.response =
 
 (* ── POST handler ────────────────────────────── *)
 
-let handle_post s request body_str : Cohttp_eio.Server.response =
-  match Yojson.Safe.from_string body_str with
-  | exception Yojson.Json_error msg ->
+(** H5 fix: Accept pre-parsed JSON to avoid double-parsing in callback. *)
+let handle_post_parsed s request json_result : Cohttp_eio.Server.response =
+  match json_result with
+  | Error msg ->
     let err = Jsonrpc.make_error ~id:(Jsonrpc.Int 0)
       ~code:Error_codes.parse_error
       ~message:(Printf.sprintf "JSON parse error: %s" msg) () in
     respond_json ~status:`OK (Jsonrpc.message_to_yojson err)
-  | json ->
+  | Ok json ->
     let is_init = is_initialize_request json in
     if is_init then
       dispatch_jsonrpc s json true
@@ -203,6 +204,13 @@ let handle_post s request body_str : Cohttp_eio.Server.response =
       match validate_session_or_error s.session request with
       | Error resp -> resp
       | Ok () -> dispatch_jsonrpc s json false
+
+let _handle_post s request body_str : Cohttp_eio.Server.response =
+  let json_result =
+    try Ok (Yojson.Safe.from_string body_str)
+    with Yojson.Json_error msg -> Error msg
+  in
+  handle_post_parsed s request json_result
 
 (* ── GET handler (SSE) ───────────────────────── *)
 
@@ -290,23 +298,28 @@ let callback s ?(prefix="/mcp") _conn request body =
   else
     match meth with
     | `POST ->
+      (* H5 fix: Parse JSON once here, pass the parsed result to handle_post
+         to avoid double-parsing (previously parsed for is_init check in
+         callback AND again in handle_post). *)
       begin match
         Eio.Buf_read.of_flow ~max_size:(10 * 1024 * 1024) body
         |> Eio.Buf_read.take_all
       with
       | body_str ->
-        let is_init =
-          (match Yojson.Safe.from_string body_str with
-           | json -> is_initialize_request json
-           | exception _ -> false)
+        let json_result =
+          (try Ok (Yojson.Safe.from_string body_str)
+           with Yojson.Json_error msg -> Error msg)
         in
-        (* Auth check: skip for initialize requests (MCP spec allows unauthenticated init) *)
+        let is_init = match json_result with
+          | Ok json -> is_initialize_request json
+          | Error _ -> false
+        in
         if is_init then
-          handle_post s request body_str
+          handle_post_parsed s request json_result
         else begin
           match check_auth_if_configured s request with
           | Error resp -> resp
-          | Ok () -> handle_post s request body_str
+          | Ok () -> handle_post_parsed s request json_result
         end
       | exception Eio.Buf_read.Buffer_limit_exceeded ->
         respond_json ~status:`Request_entity_too_large

@@ -110,12 +110,17 @@ type message =
 
 (** Parse a JSON-RPC message from JSON *)
 let message_of_yojson json =
-  let open Yojson.Safe.Util in
   try
-    let has_id = member "id" json <> `Null in
-    let has_method = member "method" json <> `Null in
-    let has_result = member "result" json <> `Null in
-    let has_error = member "error" json <> `Null in
+    (* C1 fix: Use List.assoc_opt on the raw assoc list to distinguish
+       absent fields from explicit null values. Yojson.Safe.Util.member
+       returns `Null for both cases, but JSON-RPC 2.0 treats
+       {"id": null, "method": "..."} as a Request with null id,
+       while {"method": "..."} (no "id" key) is a Notification. *)
+    let fields = match json with `Assoc f -> f | _ -> [] in
+    let has_id = List.assoc_opt "id" fields <> None in
+    let has_method = List.assoc_opt "method" fields <> None in
+    let has_result = List.assoc_opt "result" fields <> None in
+    let has_error = List.assoc_opt "error" fields <> None in
     match (has_id, has_method, has_result, has_error) with
     | (true, true, false, false) ->
       (* Request: has id and method *)

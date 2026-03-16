@@ -3,6 +3,11 @@
     Provides a ready-to-use HTTPS connector for cohttp-eio clients,
     using tls-eio with the system CA bundle (ca-certs). *)
 
+(** Ensure the Mirage_crypto CSPRNG is initialized. Idempotent.
+    Other modules that need RNG should call this rather than
+    maintaining their own initialization flag. *)
+val ensure_rng : unit -> unit
+
 (** Create an HTTPS connector suitable for [Cohttp_eio.Client.make ~https].
 
     Uses the operating system's trusted CA certificates.
