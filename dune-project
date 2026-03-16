@@ -2,7 +2,7 @@
 
 (name mcp_protocol)
 
-(version 0.11.0)
+(version 0.12.0)
 
 (generate_opam_files true)
 
@@ -63,6 +63,9 @@ Provides SSE encoding/broadcasting, session management, and HTTP server/client."
   (base64 (>= 3.0))
   (digestif (>= 1.0))
   (mirage-crypto-rng (>= 1.0))
+  (tls (>= 2.0))
+  (tls-eio (>= 2.0))
+  (ca-certs (>= 1.0))
   (yojson (>= 2.0))
   (alcotest :with-test)
   (eio_main :with-test)))

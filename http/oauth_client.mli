@@ -69,6 +69,35 @@ val refresh_token :
   refresh_token:string ->
   (Auth.oauth_token_response, string) result
 
+(** {2 OAuth Discovery (RFC 8414)} *)
+
+(** Discover OAuth authorization server metadata.
+    Fetches [{issuer}/.well-known/oauth-authorization-server] and parses
+    the response into {!Auth.authorization_server_metadata}. *)
+val discover :
+  net:_ Eio.Net.t -> sw:Eio.Switch.t ->
+  issuer:string ->
+  (Auth.authorization_server_metadata, string) result
+
+(** {2 Dynamic Client Registration (RFC 7591)} *)
+
+(** Client registration request parameters. *)
+type client_registration_request = {
+  client_name: string;
+  redirect_uris: string list;
+  grant_types: string list;
+  response_types: string list;
+  token_endpoint_auth_method: string;
+}
+
+(** Register a new OAuth client dynamically.
+    @return [Ok client_id] on success. *)
+val register_client :
+  net:_ Eio.Net.t -> sw:Eio.Switch.t ->
+  registration_endpoint:string ->
+  request:client_registration_request ->
+  (string, string) result
+
 (** {2 Bearer Token Injection} *)
 
 (** Add a Bearer Authorization header to an HTTP request.
