@@ -30,9 +30,9 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 0.9.0))
- (mcp_protocol_eio (>= 0.9.0))   ;; for stdio transport
- (mcp_protocol_http (>= 0.9.0))) ;; for HTTP transport
+ (mcp_protocol (>= 0.11.0))
+ (mcp_protocol_eio (>= 0.11.0))   ;; for stdio transport
+ (mcp_protocol_http (>= 0.11.0))) ;; for HTTP transport
 ```
 
 ## Docs
@@ -126,30 +126,62 @@ let my_prompt : Mcp_types.prompt = {
 }
 ```
 
+### Automatic JSON Schema with ppx (v0.11.0+)
+
+Use `ppx_deriving_jsonschema` to generate `input_schema` from OCaml record types:
+
+```ocaml
+(* ppx generates: echo_input_jsonschema : Yojson.Safe.t *)
+type echo_input = {
+  text: string;
+  count: int option;
+} [@@deriving yojson, jsonschema]
+
+(* Use directly with make_tool -- no manual JSON Schema needed *)
+let tool = Mcp_types.make_tool
+  ~name:"echo"
+  ~description:"Echoes back the input text"
+  ~input_schema:echo_input_jsonschema
+  ()
+
+(* Type-safe argument parsing via ppx_deriving_yojson *)
+let handler _ctx _name arguments =
+  match arguments with
+  | Some json ->
+    begin match echo_input_of_yojson json with
+    | Ok input -> Ok (Mcp_types.tool_result_of_text input.text)
+    | Error e -> Error e
+    end
+  | None -> Error "missing arguments"
+```
+
+Add to your `dune` file:
+```lisp
+(preprocess (pps ppx_deriving_yojson ppx_deriving_jsonschema))
+```
+
 ### HTTP Server (Streamable HTTP)
 
 ```ocaml
 open Mcp_protocol
 open Mcp_protocol_http
 
+type echo_input = {
+  text: string;
+} [@@deriving yojson, jsonschema]
+
 let echo_tool = Mcp_types.make_tool
   ~name:"echo"
   ~description:"Echoes back the input text"
-  ~input_schema:(`Assoc [
-    ("type", `String "object");
-    ("properties", `Assoc [
-      ("text", `Assoc [("type", `String "string")])
-    ]);
-    ("required", `List [`String "text"])
-  ]) ()
+  ~input_schema:echo_input_jsonschema ()
 
 let echo_handler _ctx _name arguments =
   let text = match arguments with
-    | Some (`Assoc args) ->
-      (match List.assoc_opt "text" args with
-       | Some (`String s) -> s
-       | _ -> "(no text)")
-    | _ -> "(no arguments)"
+    | Some json ->
+      (match echo_input_of_yojson json with
+       | Ok input -> input.text
+       | Error _ -> "(invalid input)")
+    | None -> "(no arguments)"
   in
   Ok (Mcp_types.tool_result_of_text (Printf.sprintf "Echo: %s" text))
 

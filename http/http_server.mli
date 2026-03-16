@@ -27,8 +27,11 @@ type t
 
 (** {2 Construction} *)
 
-(** Create a new HTTP MCP server. *)
-val create : name:string -> version:string -> ?instructions:string -> unit -> t
+(** Create a new HTTP MCP server.
+    @param auth Optional OAuth 2.1 auth middleware configuration.
+    When provided, all requests (except initialize) require a valid bearer token. *)
+val create : name:string -> version:string -> ?instructions:string ->
+  ?auth:Auth_middleware.config -> unit -> t
 
 (** Register a tool and its handler. *)
 val add_tool : Mcp_types.tool -> Mcp_protocol_eio.Handler.tool_handler -> t -> t
