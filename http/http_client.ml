@@ -39,7 +39,7 @@ let create ~endpoint ~net ~sw ?clock ?access_token () =
   in
   {
     endpoint = Uri.of_string endpoint;
-    client = Cohttp_eio.Client.make ~https:None net;
+    client = Tls_helpers.make_client net;
     sw;
     next_id = 1;
     session_id = None;

@@ -30,9 +30,9 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 0.11.0))
- (mcp_protocol_eio (>= 0.11.0))   ;; for stdio transport
- (mcp_protocol_http (>= 0.11.0))) ;; for HTTP transport
+ (mcp_protocol (>= 0.12.0))
+ (mcp_protocol_eio (>= 0.12.0))   ;; for stdio transport
+ (mcp_protocol_http (>= 0.12.0))) ;; for HTTP transport
 ```
 
 ## Docs
@@ -218,6 +218,53 @@ let () =
     ignore (Http_client.close client)
   | Error e -> Printf.eprintf "Failed: %s\n" e
 ```
+
+### OAuth Discovery + HTTPS (v0.12.0+)
+
+Auto-discover OAuth endpoints and connect over HTTPS:
+
+```ocaml
+open Mcp_protocol_http
+
+let () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+
+  (* 1. Discover OAuth server metadata from issuer URL *)
+  match Oauth_client.discover ~net ~sw ~issuer:"https://auth.example.com" with
+  | Error e -> Printf.eprintf "Discovery failed: %s\n" e
+  | Ok metadata ->
+    Printf.printf "Auth endpoint: %s\n" metadata.authorization_endpoint;
+    Printf.printf "Token endpoint: %s\n" metadata.token_endpoint;
+
+    (* 2. Optional: Dynamic client registration *)
+    let client_id = match metadata.registration_endpoint with
+      | Some ep ->
+        let req = Oauth_client.{
+          client_name = "my-mcp-client";
+          redirect_uris = ["http://localhost:9999/callback"];
+          grant_types = ["authorization_code"];
+          response_types = ["code"];
+          token_endpoint_auth_method = "none";
+        } in
+        (match Oauth_client.register_client ~net ~sw
+           ~registration_endpoint:ep ~request:req with
+         | Ok cid -> cid
+         | Error _ -> "pre-registered-client-id")
+      | None -> "pre-registered-client-id"
+    in
+
+    (* 3. Generate PKCE and build authorization URL *)
+    let _verifier, challenge = Oauth_client.generate_pkce () in
+    let auth_url = Oauth_client.build_authorization_url
+      ~authorization_endpoint:metadata.authorization_endpoint
+      ~client_id ~redirect_uri:"http://localhost:9999/callback"
+      ~scopes:["read"] ~state:"random" ~code_challenge:challenge () in
+    Printf.printf "Visit: %s\n" auth_url
+```
+
+HTTPS is enabled automatically via `tls-eio` + system CA certificates.
 
 ### HTTP Content Negotiation
 
