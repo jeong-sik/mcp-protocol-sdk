@@ -27,3 +27,12 @@
  (names test_http_server test_http_client test_http_integration)
  (libraries mcp_protocol mcp_protocol_eio mcp_protocol_http
   eio eio.unix eio_main cohttp-eio alcotest yojson))
+
+(tests
+ (names test_ppx_schema)
+ (libraries mcp_protocol alcotest yojson)
+ (preprocess (pps ppx_deriving_yojson ppx_deriving_jsonschema)))
+
+(tests
+ (names test_auth)
+ (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio alcotest yojson str unix))

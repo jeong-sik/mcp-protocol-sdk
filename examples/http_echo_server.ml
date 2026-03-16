@@ -1,5 +1,7 @@
 (** Minimal MCP echo server over HTTP (Streamable HTTP transport).
 
+    Demonstrates ppx_deriving_jsonschema for automatic input_schema generation.
+
     Usage:
       dune exec examples/http_echo_server.exe
 
@@ -11,30 +13,26 @@
 
 open Mcp_protocol
 
+type echo_input = {
+  text: string;
+} [@@deriving yojson, jsonschema]
+
 let echo_tool =
   Mcp_types.make_tool
     ~name:"echo"
     ~description:"Echoes back the input text"
-    ~input_schema:(`Assoc [
-      ("type", `String "object");
-      ("properties", `Assoc [
-        ("text", `Assoc [
-          ("type", `String "string");
-          ("description", `String "Text to echo")])
-      ]);
-      ("required", `List [`String "text"])
-    ])
+    ~input_schema:echo_input_jsonschema
     ()
 
 let echo_handler _ctx _name arguments =
   let text =
     match arguments with
-    | Some (`Assoc args) ->
-      begin match List.assoc_opt "text" args with
-      | Some (`String s) -> s
-      | _ -> "(no text provided)"
+    | Some json ->
+      begin match echo_input_of_yojson json with
+      | Ok input -> input.text
+      | Error _ -> "(invalid input)"
       end
-    | _ -> "(no arguments)"
+    | None -> "(no arguments)"
   in
   Ok (Mcp_types.tool_result_of_text (Printf.sprintf "Echo: %s" text))
 
@@ -46,7 +44,7 @@ let () =
   let server =
     Mcp_protocol_http.Http_server.create
       ~name:"http-echo-server"
-      ~version:"0.9.0"
+      ~version:"0.11.0"
       ()
     |> Mcp_protocol_http.Http_server.add_tool echo_tool echo_handler
   in

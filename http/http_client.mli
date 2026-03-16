@@ -35,9 +35,11 @@ type t
     @param sw Eio switch for the client lifetime
     @param clock Optional Eio clock for request timeouts.
       When provided, each request times out after 60 seconds.
-      On timeout a [notifications/cancelled] notification is sent to the server. *)
+      On timeout a [notifications/cancelled] notification is sent to the server.
+    @param access_token Optional OAuth 2.1 bearer token.
+      When provided, all requests include an Authorization: Bearer header. *)
 val create : endpoint:string -> net:_ Eio.Net.t -> sw:Eio.Switch.t ->
-  ?clock:_ Eio.Time.clock -> unit -> t
+  ?clock:_ Eio.Time.clock -> ?access_token:string -> unit -> t
 
 (** {2 Callback Registration}
 

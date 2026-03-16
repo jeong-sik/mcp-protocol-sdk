@@ -10,14 +10,16 @@ type t = {
   broadcaster : Sse.Broadcaster.t;
   mutable log_level : Logging.log_level;
   mutable sleep : (float -> unit) option;
+  auth : Auth_middleware.config option;
 }
 
-let create ~name ~version ?instructions () = {
+let create ~name ~version ?instructions ?auth () = {
   handler = Mcp_protocol_eio.Handler.create ~name ~version ?instructions ();
   session = Http_session.create ();
   broadcaster = Sse.Broadcaster.create ();
   log_level = Logging.Warning;
   sleep = None;
+  auth;
 }
 
 let add_tool tool handler s =
@@ -249,10 +251,39 @@ let handle_options session : Cohttp_eio.Server.response =
 
 (* ── main callback ───────────────────────────── *)
 
+(* ── well-known endpoint (RFC 9728) ─────────── *)
+
+let handle_well_known_resource s : Cohttp_eio.Server.response =
+  match s.auth with
+  | None ->
+    Cohttp_eio.Server.respond_string
+      ~status:`Not_found ~body:"OAuth not configured" ()
+  | Some auth_config ->
+    let metadata = Auth_middleware.resource_metadata auth_config in
+    let json = Auth.protected_resource_metadata_to_yojson metadata in
+    let headers = Http.Header.of_list
+      (("Content-Type", json_content_type) :: cors_headers) in
+    Cohttp_eio.Server.respond_string
+      ~headers ~status:`OK
+      ~body:(Yojson.Safe.to_string json) ()
+
+(* ── auth check helper ──────────────────────── *)
+
+let check_auth_if_configured s request =
+  match s.auth with
+  | None -> Ok ()
+  | Some auth_config ->
+    match Auth_middleware.check_auth ~required:true auth_config request with
+    | Ok _ -> Ok ()
+    | Error resp -> Error resp
+
 let callback s ?(prefix="/mcp") _conn request body =
   let path = Http.Request.resource request in
   let meth = Http.Request.meth request in
-  if path <> prefix && not (String.length path > String.length prefix
+  (* RFC 9728: Protected Resource Metadata *)
+  if path = "/.well-known/oauth-protected-resource" && meth = `GET then
+    handle_well_known_resource s
+  else if path <> prefix && not (String.length path > String.length prefix
      && String.sub path 0 (String.length prefix) = prefix) then
     Cohttp_eio.Server.respond_string
       ~status:`Not_found ~body:"Not found" ()
@@ -263,15 +294,34 @@ let callback s ?(prefix="/mcp") _conn request body =
         Eio.Buf_read.of_flow ~max_size:(10 * 1024 * 1024) body
         |> Eio.Buf_read.take_all
       with
-      | body_str -> handle_post s request body_str
+      | body_str ->
+        let is_init =
+          (match Yojson.Safe.from_string body_str with
+           | json -> is_initialize_request json
+           | exception _ -> false)
+        in
+        (* Auth check: skip for initialize requests (MCP spec allows unauthenticated init) *)
+        if is_init then
+          handle_post s request body_str
+        else begin
+          match check_auth_if_configured s request with
+          | Error resp -> resp
+          | Ok () -> handle_post s request body_str
+        end
       | exception Eio.Buf_read.Buffer_limit_exceeded ->
         respond_json ~status:`Request_entity_too_large
           (`Assoc ["error", `String "Request body too large (max 10MB)"])
       end
     | `GET ->
-      handle_get s request
+      begin match check_auth_if_configured s request with
+      | Error resp -> resp
+      | Ok () -> handle_get s request
+      end
     | `DELETE ->
-      handle_delete s request
+      begin match check_auth_if_configured s request with
+      | Error resp -> resp
+      | Ok () -> handle_delete s request
+      end
     | `OPTIONS ->
       handle_options s.session
     | _ ->

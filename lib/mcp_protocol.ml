@@ -63,6 +63,9 @@ module Sampling = Sampling
 (** MCP method string constants *)
 module Notifications = Notifications
 
+(** OAuth 2.1 types for MCP authentication *)
+module Auth = Auth
+
 (** {1 Backward Compatibility Modules} *)
 
 (** Legacy Protocol module for existing code *)

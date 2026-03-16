@@ -25,13 +25,14 @@ type t = {
   elicitation_handler : elicitation_handler option;
   notification_handler : notification_handler option;
   timeout_fn : timeout_fn option;
+  access_token : string option;
 }
 
 let default_timeout = 60.0
 
 (* ── construction ────────────────────────────── *)
 
-let create ~endpoint ~net ~sw ?clock () =
+let create ~endpoint ~net ~sw ?clock ?access_token () =
   let timeout_fn = match clock with
     | Some c -> Some { run = fun d f -> Eio.Time.with_timeout_exn c d f }
     | None -> None
@@ -47,6 +48,7 @@ let create ~endpoint ~net ~sw ?clock () =
     elicitation_handler = None;
     notification_handler = None;
     timeout_fn;
+    access_token;
   }
 
 let on_sampling handler t = { t with sampling_handler = Some handler }
@@ -63,6 +65,10 @@ let make_headers t =
     ("Content-Type", json_content_type);
     ("Accept", json_content_type);
   ] in
+  let h = match t.access_token with
+    | Some token -> ("Authorization", Printf.sprintf "Bearer %s" token) :: h
+    | None -> h
+  in
   match t.session_id with
   | Some sid -> (Http_session.header_name, sid) :: h
   | None -> h
