@@ -78,8 +78,13 @@ let respond_401 config ~error ~description =
 
 (* ── scope checking ─────────────────────────── *)
 
+module StringSet = Set.Make(String)
+
+(** L3 fix: O(n + m) via StringSet instead of O(n * m) via List.mem.
+    Builds a set from granted scopes once, then checks membership. *)
 let check_scopes ~required ~granted =
-  List.for_all (fun s -> List.mem s granted) required
+  let granted_set = StringSet.of_list granted in
+  List.for_all (fun s -> StringSet.mem s granted_set) required
 
 (* ── main check ─────────────────────────────── *)
 

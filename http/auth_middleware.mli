@@ -42,6 +42,10 @@ val check_auth :
     Returns [None] if the header is missing or not a Bearer token. *)
 val extract_bearer_token : Http.Request.t -> string option
 
+(** Check that all [required] scopes are present in [granted].
+    Uses StringSet for O(n + m) performance. *)
+val check_scopes : required:string list -> granted:string list -> bool
+
 (** Escape double quotes and backslashes for RFC 7230 quoted-string.
     Also strips control characters (0x00-0x1F) and DEL (0x7F). *)
 val escape_quoted_string : string -> string

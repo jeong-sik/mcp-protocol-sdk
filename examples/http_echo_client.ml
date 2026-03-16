@@ -20,7 +20,7 @@ let () =
 
   (* Initialize *)
   (match Http_client.initialize client
-           ~client_name:"http-echo-client" ~client_version:"0.9.0" with
+           ~client_name:"http-echo-client" ~client_version:"0.12.1" with
    | Ok result ->
      Printf.printf "Connected to %s v%s\n%!"
        result.server_info.name result.server_info.version

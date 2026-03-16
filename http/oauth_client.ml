@@ -72,6 +72,13 @@ let build_authorization_url
   ) params |> String.concat "&" in
   Printf.sprintf "%s?%s" authorization_endpoint query
 
+(* ── constants ─────────────────────────────── *)
+
+(** L1 fix: Maximum response body size for OAuth HTTP responses (1 MB).
+    Extracted from 3 hardcoded occurrences. Override by passing ~max_response_size
+    to individual functions if needed in the future. *)
+let default_max_response_size = 1024 * 1024
+
 (* ── HTTP helpers ───────────────────────────── *)
 
 let post_form ~net ~sw ~url ~params =
@@ -88,7 +95,7 @@ let post_form ~net ~sw ~url ~params =
   let resp, resp_body = Cohttp_eio.Client.post client ~sw
     ~headers ~body uri in
   let status = Http.Response.status resp in
-  let body_str = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) resp_body
+  let body_str = Eio.Buf_read.of_flow ~max_size:default_max_response_size resp_body
     |> Eio.Buf_read.take_all in
   (status, body_str)
 
@@ -157,7 +164,7 @@ let get_json ~net ~sw ~url =
   let client = Tls_helpers.make_client net in
   let resp, resp_body = Cohttp_eio.Client.get client ~sw ~headers uri in
   let status = Http.Response.status resp in
-  let body_str = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) resp_body
+  let body_str = Eio.Buf_read.of_flow ~max_size:default_max_response_size resp_body
     |> Eio.Buf_read.take_all in
   (status, body_str)
 
@@ -226,7 +233,7 @@ let register_client ~net ~sw ~registration_endpoint ~request =
   let client = Tls_helpers.make_client net in
   let resp, resp_body = Cohttp_eio.Client.post client ~sw ~headers ~body uri in
   let status = Http.Response.status resp in
-  let body_str = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) resp_body
+  let body_str = Eio.Buf_read.of_flow ~max_size:default_max_response_size resp_body
     |> Eio.Buf_read.take_all in
   match status with
   | `Created | `OK ->
@@ -244,6 +251,27 @@ let register_client ~net ~sw ~registration_endpoint ~request =
   | _ ->
     Error (Printf.sprintf "Registration failed: HTTP %s - %s"
       (Http.Status.to_string status) body_str)
+
+(* ── CSRF state parameter (L2) ─────────────── *)
+
+(** Generate a cryptographically random state parameter for CSRF protection.
+    Returns a 32-character URL-safe base64 string. *)
+let generate_state () =
+  ensure_rng_initialized ();
+  base64url_encode (Mirage_crypto_rng.generate 24)
+
+(** Validate that the received state matches the expected state.
+    Constant-time comparison to prevent timing attacks. *)
+let validate_state ~expected ~received =
+  let len_expected = String.length expected in
+  let len_received = String.length received in
+  if len_expected <> len_received then false
+  else
+    let result = ref 0 in
+    for i = 0 to len_expected - 1 do
+      result := !result lor (Char.code expected.[i] lxor Char.code received.[i])
+    done;
+    !result = 0
 
 (* ── bearer token injection ─────────────────── *)
 
