@@ -261,17 +261,20 @@ let generate_state () =
   base64url_encode (Mirage_crypto_rng.generate 24)
 
 (** Validate that the received state matches the expected state.
-    Constant-time comparison to prevent timing attacks. *)
+    Constant-time comparison to prevent timing attacks.
+    Compares over max(len_expected, len_received) to avoid leaking
+    the expected string's length through early return. *)
 let validate_state ~expected ~received =
-  let len_expected = String.length expected in
-  let len_received = String.length received in
-  if len_expected <> len_received then false
-  else
-    let result = ref 0 in
-    for i = 0 to len_expected - 1 do
-      result := !result lor (Char.code expected.[i] lxor Char.code received.[i])
-    done;
-    !result = 0
+  let len_e = String.length expected in
+  let len_r = String.length received in
+  let result = ref (len_e lxor len_r) in
+  let max_len = max len_e len_r in
+  for i = 0 to max_len - 1 do
+    let ce = if i < len_e then Char.code expected.[i] else 0 in
+    let cr = if i < len_r then Char.code received.[i] else 0 in
+    result := !result lor (ce lxor cr)
+  done;
+  !result = 0
 
 (* ── bearer token injection ─────────────────── *)
 

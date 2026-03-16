@@ -166,6 +166,17 @@ let test_m3_embedded_resource_with_blob () =
   | Ok r -> Alcotest.(check (option string)) "blob" (Some "AQID") r.blob
   | Error e -> Alcotest.fail e
 
+let test_m3_embedded_resource_text_null () =
+  (* explicit "text": null should be treated as absent (None),
+     so a resource with only text:null and no blob is rejected *)
+  let j = `Assoc [
+    ("uri", `String "file:///test.txt");
+    ("text", `Null);
+  ] in
+  match Mcp_types.embedded_resource_of_yojson j with
+  | Error _ -> () (* expected: null text = no content *)
+  | Ok _ -> Alcotest.fail "M3: text:null with no blob should be rejected"
+
 (* ── M4: type-safe content constructors ──────── *)
 
 let test_m4_make_text_content () =
@@ -205,6 +216,12 @@ let test_l2_generate_state_length () =
   let state = Oauth_client.generate_state () in
   Alcotest.(check bool) "state is non-empty"
     true (String.length state > 0)
+
+let test_l2_generate_state_unique () =
+  let s1 = Oauth_client.generate_state () in
+  let s2 = Oauth_client.generate_state () in
+  Alcotest.(check bool) "two states differ"
+    true (s1 <> s2)
 
 let test_l2_validate_state_match () =
   let state = "abc123xyz" in
@@ -261,6 +278,7 @@ let () =
       Alcotest.test_case "no content fails" `Quick test_m3_embedded_resource_no_content;
       Alcotest.test_case "with text succeeds" `Quick test_m3_embedded_resource_with_text;
       Alcotest.test_case "with blob succeeds" `Quick test_m3_embedded_resource_with_blob;
+      Alcotest.test_case "text null rejected" `Quick test_m3_embedded_resource_text_null;
     ];
     "M4_content_constructors", [
       Alcotest.test_case "make_text_content" `Quick test_m4_make_text_content;
@@ -271,6 +289,7 @@ let () =
     ];
     "L2_state_param", [
       Alcotest.test_case "generate non-empty" `Quick test_l2_generate_state_length;
+      Alcotest.test_case "generate unique" `Quick test_l2_generate_state_unique;
       Alcotest.test_case "validate match" `Quick test_l2_validate_state_match;
       Alcotest.test_case "validate mismatch" `Quick test_l2_validate_state_mismatch;
       Alcotest.test_case "validate length mismatch" `Quick test_l2_validate_state_length_mismatch;
