@@ -74,6 +74,9 @@ module Protocol = Protocol
 (** Legacy Resources module for existing code *)
 module Resources = Resources
 
+(** Result combinators for list traversal *)
+module Result_extra = Result_extra
+
 (** {1 Convenience Re-exports} *)
 
 (** Protocol version string *)
