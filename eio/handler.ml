@@ -56,7 +56,7 @@ type t = {
   prompts: registered_prompt list;
   completion_handler: completion_handler option;
   task_handlers: task_handlers option;
-  mutable subscribed_uris: StringSet.t;
+  subscribed_uris: StringSet.t Atomic.t;
 }
 
 let create ~name ~version ?instructions () =
@@ -64,7 +64,7 @@ let create ~name ~version ?instructions () =
     tools = []; resources = []; prompts = [];
     completion_handler = None;
     task_handlers = None;
-    subscribed_uris = StringSet.empty }
+    subscribed_uris = Atomic.make StringSet.empty }
 
 (** H3 fix: Check for duplicate tool names before adding.
     Previously, registering two tools with the same name would silently
@@ -129,7 +129,7 @@ let instructions s = s.instructions
 let tools s = List.map (fun rt -> rt.tool) s.tools
 let resources s = List.map (fun rr -> rr.resource) s.resources
 let prompts s = List.map (fun rp -> rp.prompt) s.prompts
-let subscribed_uris s = StringSet.elements s.subscribed_uris
+let subscribed_uris s = StringSet.elements (Atomic.get s.subscribed_uris)
 
 (* ── capabilities ─────────────────────────────────────── *)
 
@@ -341,12 +341,23 @@ let handle_prompts_get s ctx id params =
 
 (* ── resources/subscribe + unsubscribe ────────────────── *)
 
+(** Atomically update subscribed_uris via compare-and-set loop.
+    Lock-free: StringSet is immutable, so the CAS swaps a pointer. *)
+let atomic_update_uris s f =
+  let rec loop () =
+    let old = Atomic.get s.subscribed_uris in
+    let updated = f old in
+    if Atomic.compare_and_set s.subscribed_uris old updated then ()
+    else loop ()
+  in
+  loop ()
+
 let handle_resources_subscribe s id params =
   match params with
   | Some (`Assoc fields) ->
     begin match List.assoc_opt "uri" fields with
     | Some (`String uri) ->
-      s.subscribed_uris <- StringSet.add uri s.subscribed_uris;
+      atomic_update_uris s (StringSet.add uri);
       Jsonrpc.make_response ~id ~result:(`Assoc [])
     | _ ->
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
@@ -361,7 +372,7 @@ let handle_resources_unsubscribe s id params =
   | Some (`Assoc fields) ->
     begin match List.assoc_opt "uri" fields with
     | Some (`String uri) ->
-      s.subscribed_uris <- StringSet.remove uri s.subscribed_uris;
+      atomic_update_uris s (StringSet.remove uri);
       Jsonrpc.make_response ~id ~result:(`Assoc [])
     | _ ->
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
