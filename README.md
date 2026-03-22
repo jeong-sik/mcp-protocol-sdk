@@ -7,10 +7,14 @@ A pure OCaml implementation of the [Model Context Protocol](https://modelcontext
 MCP enables LLMs to interact with external tools, resources, and prompts through a standardized protocol. This SDK provides:
 
 - **JSON-RPC 2.0** types and utilities for wire protocol
-- **MCP Primitives** (Tools, Resources, Prompts)
+- **MCP Primitives** (Tools, Resources, Prompts) with typed capabilities
 - **Stdio Transport** (`mcp_protocol_eio`) — NDJSON over stdin/stdout
 - **HTTP Transport** (`mcp_protocol_http`) — Streamable HTTP with SSE, sessions, cohttp-eio
-- **Protocol Versioning** with negotiation support
+- **Functor Architecture** — `Generic_server.Make(T)` / `Generic_client.Make(T)` for any transport
+- **Middleware** — composable transport wrappers via functor chaining
+- **Tool_arg** — type-safe argument extraction with monadic `let*` binding
+- **Memory Transport** — zero-IO paired transport for testing
+- **Protocol Versioning** with negotiation support (2025-11-25)
 
 Setup 가이드: `docs/SETUP.md`  
 Install Checklist: `docs/INSTALL-CHECKLIST.md`
@@ -30,9 +34,9 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 0.12.0))
- (mcp_protocol_eio (>= 0.12.0))   ;; for stdio transport
- (mcp_protocol_http (>= 0.12.0))) ;; for HTTP transport
+ (mcp_protocol (>= 0.14.0))
+ (mcp_protocol_eio (>= 0.14.0))   ;; for stdio transport + functor server/client
+ (mcp_protocol_http (>= 0.14.0))) ;; for HTTP transport
 ```
 
 ## Docs
@@ -76,88 +80,89 @@ let err = Jsonrpc.make_error
 ```ocaml
 open Mcp_protocol
 
-(* Define a tool (v0.2.2+: title and annotations fields) *)
-let my_tool : Mcp_types.tool = {
-  name = "calculate";
-  description = Some "Perform mathematical calculations";
-  title = Some "Calculator";
-  annotations = Some {
-    title = None;
-    read_only_hint = Some true;
-    destructive_hint = Some false;
-    idempotent_hint = Some true;
-    open_world_hint = None;
-  };
-  input_schema = `Assoc [
-    ("type", `String "object");
-    ("properties", `Assoc [
-      ("expression", `Assoc [
-        ("type", `String "string");
-        ("description", `String "Math expression to evaluate")
-      ])
-    ]);
-    ("required", `List [`String "expression"])
-  ];
-}
-
-(* Or use the convenience constructor *)
-let my_tool2 = Mcp_types.make_tool
+(* Use convenience constructors *)
+let my_tool = Mcp_types.make_tool
   ~name:"calculate"
   ~description:"Perform mathematical calculations"
   ~title:"Calculator"
+  ~annotations:{ title = None; read_only_hint = Some true;
+                 destructive_hint = Some false; idempotent_hint = Some true;
+                 open_world_hint = None }
   ()
-
-(* Define a resource *)
-let my_resource : Mcp_types.resource = {
-  uri = "file:///workspace/README.md";
-  name = "README";
-  description = Some "Project documentation";
-  mime_type = Some "text/markdown";
-}
-
-(* Define a prompt *)
-let my_prompt : Mcp_types.prompt = {
-  name = "code_review";
-  description = Some "Review code for issues";
-  arguments = Some [
-    { name = "code"; description = Some "Code to review"; required = Some true };
-    { name = "language"; description = Some "Programming language"; required = Some false };
-  ];
-}
 ```
 
-### Automatic JSON Schema with ppx (v0.11.0+)
+### Tool_arg — Type-safe Argument Extraction (v0.14.0+)
 
-Use `ppx_deriving_jsonschema` to generate `input_schema` from OCaml record types:
+Extract tool arguments without manual JSON pattern matching:
 
 ```ocaml
-(* ppx generates: echo_input_jsonschema : Yojson.Safe.t *)
-type echo_input = {
-  text: string;
-  count: int option;
-} [@@deriving yojson, jsonschema]
+open Mcp_protocol
 
-(* Use directly with make_tool -- no manual JSON Schema needed *)
-let tool = Mcp_types.make_tool
-  ~name:"echo"
-  ~description:"Echoes back the input text"
-  ~input_schema:echo_input_jsonschema
-  ()
-
-(* Type-safe argument parsing via ppx_deriving_yojson *)
-let handler _ctx _name arguments =
-  match arguments with
-  | Some json ->
-    begin match echo_input_of_yojson json with
-    | Ok input -> Ok (Mcp_types.tool_result_of_text input.text)
-    | Error e -> Error e
-    end
-  | None -> Error "missing arguments"
+let handler _ctx _name args =
+  let open Tool_arg in
+  let* text = required args "text" string in
+  let count = optional args "count" int ~default:1 in
+  let repeated = String.concat "" (List.init count (fun _ -> text)) in
+  Ok (Mcp_types.tool_result_of_text repeated)
 ```
 
-Add to your `dune` file:
-```lisp
-(preprocess (pps ppx_deriving_yojson ppx_deriving_jsonschema))
+Available extractors: `string`, `int`, `float`, `bool`, `json`, `list_of`.
+Field access: `required` (returns `Error` if missing), `optional` (returns default), `optional_opt` (returns `'a option`).
+
+### Ergonomic Server API (v0.14.0+)
+
+Register tools, resources, and prompts in one call:
+
+```ocaml
+let server =
+  Server.create ~name:"my-server" ~version:"1.0" ()
+  |> Server.tool "echo" ~description:"Echo input"
+       (fun _ctx _name args ->
+         let open Tool_arg in
+         let* text = required args "text" string in
+         Ok (Mcp_types.tool_result_of_text text))
+  |> Server.resource ~uri:"mcp://info" "info" ~mime_type:"application/json"
+       (fun _ctx _uri ->
+         Ok [Mcp_types.{ uri = "mcp://info"; mime_type = Some "application/json";
+                         text = Some {|{"status":"ok"}|}; blob = None }])
+  |> Server.prompt "greet" ~description:"Greeting"
+       (fun _ctx _name args ->
+         let who = match List.assoc_opt "name" args with Some n -> n | None -> "world" in
+         Ok Mcp_types.{ description = None;
+           messages = [{ role = User;
+             content = PromptText { type_ = "text"; text = "Hello, " ^ who } }] })
+```
+
+### Functor Architecture (v0.14.0+)
+
+Run the same server/client over any transport:
+
+```ocaml
+(* In-memory transport for testing *)
+module Mt = Mcp_protocol_eio.Memory_transport
+module Test_server = Mcp_protocol_eio.Generic_server.Make(Mt)
+module Test_client = Mcp_protocol_eio.Generic_client.Make(Mt)
+
+let () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let client_t, server_t = Mt.create_pair () in
+  let server = Test_server.create ~name:"test" ~version:"1.0" ()
+    |> Test_server.tool "ping" (fun _ _ _ -> Ok (Mcp_types.tool_result_of_text "pong"))
+  in
+  Eio.Fiber.fork ~sw (fun () ->
+    Test_server.run server ~transport:server_t ~clock:(Eio.Stdenv.clock env) ());
+  let client = Test_client.create ~transport:client_t ~clock:(Eio.Stdenv.clock env) () in
+  match Test_client.initialize client ~client_name:"test" ~client_version:"1.0" with
+  | Ok _ -> (* ready to call tools *)
+    ignore (Test_client.call_tool client ~name:"ping" ())
+  | Error e -> Printf.eprintf "Failed: %s\n" e
+```
+
+Compose middleware via functor chaining:
+```ocaml
+module Logged = Mcp_protocol_eio.Middleware.Logging(Mt)
+module Debug_server = Mcp_protocol_eio.Generic_server.Make(Logged)
 ```
 
 ### HTTP Server (Streamable HTTP)
@@ -166,24 +171,12 @@ Add to your `dune` file:
 open Mcp_protocol
 open Mcp_protocol_http
 
-type echo_input = {
-  text: string;
-} [@@deriving yojson, jsonschema]
+let echo_tool = Mcp_types.make_tool ~name:"echo" ~description:"Echo" ()
 
-let echo_tool = Mcp_types.make_tool
-  ~name:"echo"
-  ~description:"Echoes back the input text"
-  ~input_schema:echo_input_jsonschema ()
-
-let echo_handler _ctx _name arguments =
-  let text = match arguments with
-    | Some json ->
-      (match echo_input_of_yojson json with
-       | Ok input -> input.text
-       | Error _ -> "(invalid input)")
-    | None -> "(no arguments)"
-  in
-  Ok (Mcp_types.tool_result_of_text (Printf.sprintf "Echo: %s" text))
+let echo_handler _ctx _name args =
+  let open Tool_arg in
+  let* text = required args "text" string in
+  Ok (Mcp_types.tool_result_of_text ("Echo: " ^ text))
 
 let () =
   Eio_main.run @@ fun env ->
