@@ -54,12 +54,21 @@ module Make (T : Mcp_protocol.Transport.S) : sig
   val list_resources : ?cursor:string -> t -> (Mcp_types.resource list, string) result
   val read_resource : t -> uri:string ->
     (Mcp_types.resource_contents list, string) result
+  val subscribe_resource : t -> uri:string -> (unit, string) result
+  val unsubscribe_resource : t -> uri:string -> (unit, string) result
 
   (** {2 Prompts} *)
 
   val list_prompts : ?cursor:string -> t -> (Mcp_types.prompt list, string) result
   val get_prompt : t -> name:string -> ?arguments:(string * string) list -> unit ->
     (Mcp_types.prompt_result, string) result
+
+  (** {2 Tasks (experimental, 2025-11-25)} *)
+
+  val get_task : t -> task_id:string -> (Mcp_types.task, string) result
+  val get_task_result : t -> task_id:string -> (Yojson.Safe.t, string) result
+  val list_tasks : ?cursor:string -> t -> (Mcp_types.task list, string) result
+  val cancel_task : t -> task_id:string -> (Mcp_types.task, string) result
 
   (** {2 Low-level} *)
 
