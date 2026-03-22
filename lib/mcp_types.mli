@@ -45,15 +45,26 @@ type tool_annotations = {
 val tool_annotations_to_yojson : tool_annotations -> Yojson.Safe.t
 val tool_annotations_of_yojson : Yojson.Safe.t -> (tool_annotations, string) result
 
+(** {2 Tool Execution} *)
+
+type tool_execution = {
+  task_support: Mcp_types_tasks.task_execution_support;
+}
+
+val tool_execution_to_yojson : tool_execution -> Yojson.Safe.t
+val tool_execution_of_yojson : Yojson.Safe.t -> (tool_execution, string) result
+
 (** {2 Tools} *)
 
 type tool = {
   name: string;
   description: string option;
   input_schema: Yojson.Safe.t;
+  output_schema: Yojson.Safe.t option;
   title: string option;
   annotations: tool_annotations option;
   icon: string option;
+  execution: tool_execution option;
 }
 
 val tool_to_yojson : tool -> Yojson.Safe.t
@@ -198,13 +209,57 @@ type prompt_result = {
 val prompt_result_to_yojson : prompt_result -> Yojson.Safe.t
 val prompt_result_of_yojson : Yojson.Safe.t -> (prompt_result, string) result
 
+(** {2 Roots} *)
+
+type root = {
+  uri: string;
+  name: string option;
+}
+
+val root_to_yojson : root -> Yojson.Safe.t
+val root_of_yojson : Yojson.Safe.t -> (root, string) result
+
+type roots_capability = {
+  list_changed: bool option;
+}
+
+val roots_capability_to_yojson : roots_capability -> Yojson.Safe.t
+val roots_capability_of_yojson : Yojson.Safe.t -> (roots_capability, string) result
+
+val make_root : uri:string -> ?name:string -> unit -> root
+
+(** {2 Capability Sub-types} *)
+
+type tools_capability = {
+  list_changed: bool option;
+}
+
+val tools_capability_to_yojson : tools_capability -> Yojson.Safe.t
+val tools_capability_of_yojson : Yojson.Safe.t -> (tools_capability, string) result
+
+type resources_capability = {
+  subscribe: bool option;
+  list_changed: bool option;
+}
+
+val resources_capability_to_yojson : resources_capability -> Yojson.Safe.t
+val resources_capability_of_yojson : Yojson.Safe.t -> (resources_capability, string) result
+
+type prompts_capability = {
+  list_changed: bool option;
+}
+
+val prompts_capability_to_yojson : prompts_capability -> Yojson.Safe.t
+val prompts_capability_of_yojson : Yojson.Safe.t -> (prompts_capability, string) result
+
 (** {2 Capabilities} *)
 
 type server_capabilities = {
-  tools: Yojson.Safe.t option;
-  resources: Yojson.Safe.t option;
-  prompts: Yojson.Safe.t option;
-  logging: Yojson.Safe.t option;
+  tools: tools_capability option;
+  resources: resources_capability option;
+  prompts: prompts_capability option;
+  logging: unit option;
+  completions: unit option;
   experimental: Yojson.Safe.t option;
 }
 
@@ -212,9 +267,9 @@ val server_capabilities_to_yojson : server_capabilities -> Yojson.Safe.t
 val server_capabilities_of_yojson : Yojson.Safe.t -> (server_capabilities, string) result
 
 type client_capabilities = {
-  roots: Yojson.Safe.t option;
-  sampling: Yojson.Safe.t option;
-  elicitation: Yojson.Safe.t option;
+  roots: roots_capability option;
+  sampling: unit option;
+  elicitation: unit option;
   experimental: Yojson.Safe.t option;
 }
 
@@ -282,7 +337,7 @@ val paginated_result_of_yojson : (Yojson.Safe.t -> ('a, string) result) -> Yojso
 
 (** {2 Convenience Constructors} *)
 
-val make_tool : name:string -> ?description:string -> ?title:string -> ?annotations:tool_annotations -> ?icon:string -> ?input_schema:Yojson.Safe.t -> unit -> tool
+val make_tool : name:string -> ?description:string -> ?title:string -> ?annotations:tool_annotations -> ?icon:string -> ?input_schema:Yojson.Safe.t -> ?output_schema:Yojson.Safe.t -> ?execution:tool_execution -> unit -> tool
 val make_resource : uri:string -> name:string -> ?description:string -> ?mime_type:string -> ?icon:string -> unit -> resource
 val make_prompt : name:string -> ?description:string -> ?arguments:prompt_argument list -> ?icon:string -> unit -> prompt
 
@@ -301,25 +356,6 @@ val make_resource_link_content : ?annotations:content_annotations -> ?name:strin
 
 val tool_result_of_text : string -> tool_result
 val tool_result_of_error : string -> tool_result
-
-(** {2 Roots} *)
-
-type root = {
-  uri: string;
-  name: string option;
-}
-
-val root_to_yojson : root -> Yojson.Safe.t
-val root_of_yojson : Yojson.Safe.t -> (root, string) result
-
-type roots_capability = {
-  list_changed: bool option;
-}
-
-val roots_capability_to_yojson : roots_capability -> Yojson.Safe.t
-val roots_capability_of_yojson : Yojson.Safe.t -> (roots_capability, string) result
-
-val make_root : uri:string -> ?name:string -> unit -> root
 
 (** {2 Completion} *)
 include module type of Mcp_types_completion

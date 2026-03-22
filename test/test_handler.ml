@@ -95,18 +95,18 @@ let test_add_prompt () =
 let test_capabilities_empty () =
   let h = Handler.create ~name:"s" ~version:"1" () in
   let caps = Handler.server_capabilities h in
-  Alcotest.(check (option json)) "no tools cap" None caps.tools;
-  Alcotest.(check (option json)) "no resources cap" None caps.resources;
-  Alcotest.(check (option json)) "no prompts cap" None caps.prompts;
+  Alcotest.(check bool) "no tools cap" true (Option.is_none caps.tools);
+  Alcotest.(check bool) "no resources cap" true (Option.is_none caps.resources);
+  Alcotest.(check bool) "no prompts cap" true (Option.is_none caps.prompts);
   (* logging is always present *)
-  Alcotest.(check bool) "has logging" true (caps.logging <> None)
+  Alcotest.(check bool) "has logging" true (Option.is_some caps.logging)
 
 let test_capabilities_with_tools () =
   let tool = Mcp_types.make_tool ~name:"t" () in
   let h = Handler.create ~name:"s" ~version:"1" ()
     |> Handler.add_tool tool echo_handler in
   let caps = Handler.server_capabilities h in
-  Alcotest.(check bool) "tools cap present" true (caps.tools <> None)
+  Alcotest.(check bool) "tools cap present" true (Option.is_some caps.tools)
 
 (* ── dispatch: initialize ────────────────────── *)
 

@@ -28,6 +28,40 @@ let task_status_is_terminal = function
   | Completed | Failed | Cancelled -> true
   | Working | Input_required -> false
 
+(** Terminal task statuses — tasks in these states cannot transition further. *)
+type terminal_status =
+  | Terminal_completed
+  | Terminal_failed
+  | Terminal_cancelled
+
+(** Active task statuses — tasks that are still in progress. *)
+type active_status =
+  | Active_working
+  | Active_input_required
+
+(** Classified view of task_status — separates terminal from active at the type level.
+    Functions that should only accept active tasks can take [active_status],
+    and functions that should only accept terminal tasks can take [terminal_status]. *)
+type classified_status =
+  | Terminal of terminal_status
+  | Active of active_status
+
+let classify_status = function
+  | Completed -> Terminal Terminal_completed
+  | Failed -> Terminal Terminal_failed
+  | Cancelled -> Terminal Terminal_cancelled
+  | Working -> Active Active_working
+  | Input_required -> Active Active_input_required
+
+let of_terminal = function
+  | Terminal_completed -> Completed
+  | Terminal_failed -> Failed
+  | Terminal_cancelled -> Cancelled
+
+let of_active = function
+  | Active_working -> Working
+  | Active_input_required -> Input_required
+
 (** Task object — execution state of a request. *)
 type task = {
   task_id: string;
