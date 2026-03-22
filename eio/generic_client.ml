@@ -270,6 +270,16 @@ module Make (T : Mcp_protocol.Transport.S) = struct
     | Error e -> Error e
     | Ok result -> Handler.parse_list_field "contents" Mcp_types.resource_contents_of_yojson result
 
+  let list_resource_templates ?cursor t =
+    let params = match cursor with
+      | Some c -> Some (`Assoc [("cursor", `String c)])
+      | None -> None
+    in
+    match send_request t ~method_:"resources/templates/list" ?params () with
+    | Error e -> Error e
+    | Ok result ->
+      Handler.parse_list_field "resourceTemplates" Mcp_types.resource_template_of_yojson result
+
   (* ── prompts ──────────────────────────────────────── *)
 
   let list_prompts ?cursor t =
