@@ -26,7 +26,7 @@ let () =
   in
   (* Initialize *)
   begin match Mcp_protocol_eio.Client.initialize client
-    ~client_name:"echo-client" ~client_version:"0.12.1" with
+    ~client_name:"echo-client" ~client_version:"0.14.0" with
   | Error e ->
     Printf.eprintf "Initialize failed: %s\n" e
   | Ok result ->

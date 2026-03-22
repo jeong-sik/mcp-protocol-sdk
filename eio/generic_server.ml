@@ -59,6 +59,9 @@ module Make (T : Mcp_protocol.Transport.S) = struct
   let add_resource resource handler s =
     { s with handler = Handler.add_resource resource handler s.handler }
 
+  let add_resource_template template handler s =
+    { s with handler = Handler.add_resource_template template handler s.handler }
+
   let add_prompt prompt handler s =
     { s with handler = Handler.add_prompt prompt handler s.handler }
 
@@ -73,6 +76,9 @@ module Make (T : Mcp_protocol.Transport.S) = struct
 
   let resource ~uri name ?description ?mime_type handler s =
     { s with handler = Handler.resource ~uri name ?description ?mime_type handler s.handler }
+
+  let resource_template ~uri_template name ?description ?mime_type handler s =
+    { s with handler = Handler.resource_template ~uri_template name ?description ?mime_type handler s.handler }
 
   let prompt name ?description ?arguments handler s =
     { s with handler = Handler.prompt name ?description ?arguments handler s.handler }

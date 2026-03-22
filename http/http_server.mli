@@ -39,6 +39,9 @@ val add_tool : Mcp_types.tool -> Mcp_protocol_eio.Handler.tool_handler -> t -> t
 (** Register a resource and its handler. *)
 val add_resource : Mcp_types.resource -> Mcp_protocol_eio.Handler.resource_handler -> t -> t
 
+(** Register a resource template and its handler. *)
+val add_resource_template : Mcp_types.resource_template -> Mcp_protocol_eio.Handler.resource_handler -> t -> t
+
 (** Register a prompt and its handler. *)
 val add_prompt : Mcp_types.prompt -> Mcp_protocol_eio.Handler.prompt_handler -> t -> t
 

@@ -71,6 +71,9 @@ val add_tool : Mcp_types.tool -> tool_handler -> t -> t
 (** Register a resource and its handler. *)
 val add_resource : Mcp_types.resource -> resource_handler -> t -> t
 
+(** Register a resource template and its handler. *)
+val add_resource_template : Mcp_types.resource_template -> resource_handler -> t -> t
+
 (** Register a prompt and its handler. *)
 val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
 
@@ -82,6 +85,10 @@ val tool : string -> ?description:string -> ?input_schema:Yojson.Safe.t ->
 
 (** Register a resource by URI and name. *)
 val resource : uri:string -> string -> ?description:string -> ?mime_type:string ->
+  resource_handler -> t -> t
+
+(** Register a resource template by URI template and name. *)
+val resource_template : uri_template:string -> string -> ?description:string -> ?mime_type:string ->
   resource_handler -> t -> t
 
 (** Register a prompt by name. *)

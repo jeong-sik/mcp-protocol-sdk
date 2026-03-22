@@ -1,6 +1,6 @@
 (** Minimal MCP echo server over HTTP (Streamable HTTP transport).
 
-    Demonstrates ppx_deriving_jsonschema for automatic input_schema generation.
+    Demonstrates Tool_arg for type-safe argument extraction.
 
     Usage:
       dune exec examples/http_echo_server.exe
@@ -13,29 +13,6 @@
 
 open Mcp_protocol
 
-type echo_input = {
-  text: string;
-} [@@deriving yojson, jsonschema]
-
-let echo_tool =
-  Mcp_types.make_tool
-    ~name:"echo"
-    ~description:"Echoes back the input text"
-    ~input_schema:echo_input_jsonschema
-    ()
-
-let echo_handler _ctx _name arguments =
-  let text =
-    match arguments with
-    | Some json ->
-      begin match echo_input_of_yojson json with
-      | Ok input -> input.text
-      | Error _ -> "(invalid input)"
-      end
-    | None -> "(no arguments)"
-  in
-  Ok (Mcp_types.tool_result_of_text (Printf.sprintf "Echo: %s" text))
-
 let () =
   let port = 8080 in
   Printf.printf "Starting HTTP MCP echo server on port %d...\n%!" port;
@@ -44,9 +21,15 @@ let () =
   let server =
     Mcp_protocol_http.Http_server.create
       ~name:"http-echo-server"
-      ~version:"0.12.1"
+      ~version:"0.14.0"
       ()
-    |> Mcp_protocol_http.Http_server.add_tool echo_tool echo_handler
+    |> Mcp_protocol_http.Http_server.add_tool
+         (Mcp_types.make_tool ~name:"echo"
+            ~description:"Echoes back the input text" ())
+         (fun _ctx _name args ->
+           let open Tool_arg in
+           let* text = required args "text" string in
+           Ok (Mcp_types.tool_result_of_text (Printf.sprintf "Echo: %s" text)))
   in
   let net = Eio.Stdenv.net env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in

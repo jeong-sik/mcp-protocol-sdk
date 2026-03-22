@@ -263,6 +263,43 @@ let test_build_init_params () =
 
 (* ── Suite ────────────────────────────────────── *)
 
+(* ── resource templates ──────────────────────── *)
+
+let test_resource_template_register () =
+  let h = Handler.create ~name:"s" ~version:"1" ()
+    |> Handler.resource_template ~uri_template:"file:///{path}" "files"
+         ~description:"File access" ~mime_type:"text/plain"
+         (fun _ctx _uri -> Ok [Mcp_types.{
+           uri = "file:///test.txt"; mime_type = Some "text/plain";
+           text = Some "content"; blob = None;
+         }])
+  in
+  Alcotest.(check int) "one template" 1 (List.length (Handler.resource_templates h))
+
+let test_resource_templates_list_dispatch () =
+  let h = Handler.create ~name:"s" ~version:"1" ()
+    |> Handler.resource_template ~uri_template:"db:///{table}" "database"
+         (fun _ctx _uri -> Ok [])
+  in
+  match dispatch_request h "resources/templates/list" () with
+  | Some (Jsonrpc.Response resp) ->
+    (match resp.result with
+     | `Assoc fields ->
+       (match List.assoc_opt "resourceTemplates" fields with
+        | Some (`List templates) ->
+          Alcotest.(check int) "one template" 1 (List.length templates)
+        | _ -> Alcotest.fail "missing resourceTemplates")
+     | _ -> Alcotest.fail "expected object")
+  | _ -> Alcotest.fail "expected response"
+
+let test_capabilities_with_templates () =
+  let h = Handler.create ~name:"s" ~version:"1" ()
+    |> Handler.resource_template ~uri_template:"x:///{id}" "x"
+         (fun _ctx _uri -> Ok [])
+  in
+  let caps = Handler.server_capabilities h in
+  Alcotest.(check bool) "resources cap from template" true (Option.is_some caps.resources)
+
 let () =
   Alcotest.run "Handler" [
     "create", [
@@ -289,6 +326,11 @@ let () =
       Alcotest.test_case "tools/call unknown" `Quick test_dispatch_tools_call_unknown;
       Alcotest.test_case "unknown method" `Quick test_dispatch_unknown_method;
       Alcotest.test_case "notification returns None" `Quick test_dispatch_notification_returns_none;
+    ];
+    "resource_templates", [
+      Alcotest.test_case "register and list" `Quick test_resource_template_register;
+      Alcotest.test_case "templates/list dispatch" `Quick test_resource_templates_list_dispatch;
+      Alcotest.test_case "capabilities with templates" `Quick test_capabilities_with_templates;
     ];
     "helpers", [
       Alcotest.test_case "parse_list_field" `Quick test_parse_list_field_success;

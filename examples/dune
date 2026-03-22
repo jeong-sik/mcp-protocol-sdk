@@ -3,8 +3,7 @@
  (public_name mcp_echo_server)
  (package mcp_protocol_eio)
  (modules echo_server)
- (libraries mcp_protocol mcp_protocol_eio eio_main yojson)
- (preprocess (pps ppx_deriving_yojson ppx_deriving_jsonschema)))
+ (libraries mcp_protocol mcp_protocol_eio eio_main yojson))
 
 (executable
  (name echo_client)
@@ -18,8 +17,7 @@
  (public_name mcp_http_echo_server)
  (package mcp_protocol_http)
  (modules http_echo_server)
- (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson)
- (preprocess (pps ppx_deriving_yojson ppx_deriving_jsonschema)))
+ (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson))
 
 (executable
  (name http_echo_client)
@@ -33,5 +31,4 @@
  (public_name mcp_http_auth_server)
  (package mcp_protocol_http)
  (modules http_auth_server)
- (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson unix)
- (preprocess (pps ppx_deriving_yojson ppx_deriving_jsonschema)))
+ (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson unix))
