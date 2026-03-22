@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-03-23
+
+### Added
+- **Generic_client tasks API**: `get_task`, `get_task_result`, `list_tasks`, `cancel_task`
+  now available in `Generic_client.Make(T)` (was missing from v0.14.0 functor).
+- **Generic_client resource subscriptions**: `subscribe_resource`, `unsubscribe_resource`.
+- **Resource template registration**: `Handler.resource_template`, `Server.resource_template`
+  with `resources/templates/list` dispatch and template fallback on `resources/read`.
+- **Examples modernized**: all examples use `Tool_arg` and ergonomic API, ppx removed.
+
+### Changed
+- Version bump to 0.15.0.
+
 ## [0.14.0] - 2026-03-23
 
 ### Added
