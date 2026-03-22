@@ -26,28 +26,16 @@
 
 open Mcp_protocol
 
-type echo_input = {
-  text: string;
-} [@@deriving yojson, jsonschema]
-
 let echo_tool =
   Mcp_types.make_tool
     ~name:"echo"
     ~description:"Echoes back the input text (requires auth)"
-    ~input_schema:echo_input_jsonschema
     ()
 
-let echo_handler _ctx _name arguments =
-  let text =
-    match arguments with
-    | Some json ->
-      begin match echo_input_of_yojson json with
-      | Ok input -> input.text
-      | Error _ -> "(invalid input)"
-      end
-    | None -> "(no arguments)"
-  in
-  Ok (Mcp_types.tool_result_of_text (Printf.sprintf "Echo: %s" text))
+let echo_handler _ctx _name args =
+  let open Tool_arg in
+  let* text = required args "text" string in
+  Ok (Mcp_types.tool_result_of_text ("Echo: " ^ text))
 
 (* Simple static token verifier for demonstration.
    In production, this would validate JWTs or call an introspection endpoint. *)
@@ -78,7 +66,7 @@ let () =
   let server =
     Mcp_protocol_http.Http_server.create
       ~name:"auth-echo-server"
-      ~version:"0.12.1"
+      ~version:"0.14.0"
       ~auth:auth_config
       ()
     |> Mcp_protocol_http.Http_server.add_tool echo_tool echo_handler

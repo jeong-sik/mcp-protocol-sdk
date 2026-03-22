@@ -31,5 +31,4 @@
  (public_name mcp_http_auth_server)
  (package mcp_protocol_http)
  (modules http_auth_server)
- (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson unix)
- (preprocess (pps ppx_deriving_yojson ppx_deriving_jsonschema)))
+ (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson unix))
