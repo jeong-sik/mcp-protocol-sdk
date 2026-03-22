@@ -46,6 +46,7 @@ module Make (T : Mcp_protocol.Transport.S) : sig
   val create : name:string -> version:string -> ?instructions:string -> unit -> t
   val add_tool : Mcp_types.tool -> tool_handler -> t -> t
   val add_resource : Mcp_types.resource -> resource_handler -> t -> t
+  val add_resource_template : Mcp_types.resource_template -> resource_handler -> t -> t
   val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
   val add_completion_handler : completion_handler -> t -> t
   val add_task_handlers : task_handlers -> t -> t
@@ -55,6 +56,8 @@ module Make (T : Mcp_protocol.Transport.S) : sig
   val tool : string -> ?description:string -> ?input_schema:Yojson.Safe.t ->
     tool_handler -> t -> t
   val resource : uri:string -> string -> ?description:string -> ?mime_type:string ->
+    resource_handler -> t -> t
+  val resource_template : uri_template:string -> string -> ?description:string -> ?mime_type:string ->
     resource_handler -> t -> t
   val prompt : string -> ?description:string -> ?arguments:Mcp_types.prompt_argument list ->
     prompt_handler -> t -> t

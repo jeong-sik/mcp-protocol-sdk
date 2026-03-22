@@ -47,12 +47,18 @@ type registered_prompt = {
   handler: prompt_handler;
 }
 
+type registered_resource_template = {
+  template: Mcp_types.resource_template;
+  handler: resource_handler;
+}
+
 type t = {
   name: string;
   version: string;
   instructions: string option;
   tools: registered_tool list;
   resources: registered_resource list;
+  resource_templates: registered_resource_template list;
   prompts: registered_prompt list;
   completion_handler: completion_handler option;
   task_handlers: task_handlers option;
@@ -61,7 +67,7 @@ type t = {
 
 let create ~name ~version ?instructions () =
   { name; version; instructions;
-    tools = []; resources = []; prompts = [];
+    tools = []; resources = []; resource_templates = []; prompts = [];
     completion_handler = None;
     task_handlers = None;
     subscribed_uris = Atomic.make StringSet.empty }
@@ -78,6 +84,9 @@ let add_tool (tool : Mcp_types.tool) handler s =
 
 let add_resource resource handler s =
   { s with resources = s.resources @ [{ resource; handler }] }
+
+let add_resource_template template handler s =
+  { s with resource_templates = s.resource_templates @ [{ template; handler }] }
 
 let add_prompt prompt handler s =
   { s with prompts = s.prompts @ [{ prompt; handler }] }
@@ -97,6 +106,12 @@ let tool name ?description ?input_schema handler s =
 let resource ~uri name ?description ?mime_type handler s =
   let r = Mcp_types.make_resource ~uri ~name ?description ?mime_type () in
   add_resource r handler s
+
+let resource_template ~uri_template name ?description ?mime_type handler s =
+  let t : Mcp_types.resource_template = {
+    uri_template; name; description; mime_type; icon = None;
+  } in
+  add_resource_template t handler s
 
 let prompt name ?description ?arguments handler s =
   let p = Mcp_types.make_prompt ~name ?description ?arguments () in
@@ -140,6 +155,7 @@ let version s = s.version
 let instructions s = s.instructions
 let tools s = List.map (fun rt -> rt.tool) s.tools
 let resources s = List.map (fun rr -> rr.resource) s.resources
+let resource_templates s = List.map (fun rt -> rt.template) s.resource_templates
 let prompts s = List.map (fun rp -> rp.prompt) s.prompts
 let subscribed_uris s = StringSet.elements (Atomic.get s.subscribed_uris)
 
@@ -151,7 +167,7 @@ let server_capabilities s =
     else Some { list_changed = Some false }
   in
   let resources_cap : Mcp_types.resources_capability option =
-    if s.resources = [] then None
+    if s.resources = [] && s.resource_templates = [] then None
     else Some { subscribe = Some true; list_changed = Some false }
   in
   let prompts_cap : Mcp_types.prompts_capability option =
@@ -282,9 +298,6 @@ let handle_resources_read s ctx id params =
         List.find_opt (fun rr -> rr.resource.Mcp_types.uri = resource_uri) s.resources
       in
       begin match handler_opt with
-      | None ->
-        Jsonrpc.make_error ~id ~code:Error_codes.resource_not_found
-          ~message:(Printf.sprintf "Unknown resource: %s" resource_uri) ()
       | Some rr ->
         begin match rr.handler ctx resource_uri with
         | Ok contents ->
@@ -296,6 +309,40 @@ let handle_resources_read s ctx id params =
         | Error msg ->
           Jsonrpc.make_error ~id ~code:Error_codes.internal_error
             ~message:msg ()
+        end
+      | None ->
+        (* Fall back to resource templates: find a template whose
+           uri_template is a prefix match for the requested URI. *)
+        let template_handler_opt =
+          List.find_opt (fun rt ->
+            (* Simple prefix match: check if the URI starts with the
+               non-variable prefix of the template. A full RFC 6570
+               implementation can be added later. *)
+            let tmpl = rt.template.Mcp_types.uri_template in
+            let prefix = match String.index_opt tmpl '{' with
+              | Some i -> String.sub tmpl 0 i
+              | None -> tmpl
+            in
+            String.length resource_uri >= String.length prefix
+            && String.sub resource_uri 0 (String.length prefix) = prefix
+          ) s.resource_templates
+        in
+        begin match template_handler_opt with
+        | Some rt ->
+          begin match rt.handler ctx resource_uri with
+          | Ok contents ->
+            let contents_json =
+              List.map Mcp_types.resource_contents_to_yojson contents
+            in
+            Jsonrpc.make_response ~id
+              ~result:(`Assoc [("contents", `List contents_json)])
+          | Error msg ->
+            Jsonrpc.make_error ~id ~code:Error_codes.internal_error
+              ~message:msg ()
+          end
+        | None ->
+          Jsonrpc.make_error ~id ~code:Error_codes.resource_not_found
+            ~message:(Printf.sprintf "Unknown resource: %s" resource_uri) ()
         end
       end
     end
@@ -577,6 +624,11 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
         handle_resources_subscribe s req.id req.params
       | m when m = Notifications.resources_unsubscribe ->
         handle_resources_unsubscribe s req.id req.params
+      | m when m = Notifications.resources_templates_list ->
+        let templates_json = List.map (fun rt ->
+          Mcp_types.resource_template_to_yojson rt.template) s.resource_templates in
+        Jsonrpc.make_response ~id:req.id
+          ~result:(`Assoc [("resourceTemplates", `List templates_json)])
       | m when m = Notifications.prompts_list ->
         handle_prompts_list s req.id
       | m when m = Notifications.prompts_get ->

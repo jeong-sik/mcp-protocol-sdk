@@ -28,6 +28,9 @@ let add_tool tool handler s =
 let add_resource resource handler s =
   { s with handler = Mcp_protocol_eio.Handler.add_resource resource handler s.handler }
 
+let add_resource_template template handler s =
+  { s with handler = Mcp_protocol_eio.Handler.add_resource_template template handler s.handler }
+
 let add_prompt prompt handler s =
   { s with handler = Mcp_protocol_eio.Handler.add_prompt prompt handler s.handler }
 
