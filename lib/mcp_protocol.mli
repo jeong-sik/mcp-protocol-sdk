@@ -16,6 +16,7 @@ module Session = Session
 module Logging = Logging
 module Sampling = Sampling
 module Notifications = Notifications
+module Transport = Transport
 module Auth = Auth
 module Protocol = Protocol
 module Resources = Resources
