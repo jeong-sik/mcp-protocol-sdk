@@ -200,6 +200,85 @@ let test_resources () =
   Mt.close client_t
 in
 
+(* ── test: resource templates ─────────────────── *)
+
+let test_resource_templates () =
+  Eio.Switch.run @@ fun sw ->
+  let client_t, server_t = Mt.create_pair () in
+  let server =
+    Server.create ~name:"tmpl-server" ~version:"1.0" ()
+    |> Server.resource_template ~uri_template:"db:///{table}" "database"
+         ~description:"Database table access"
+         (fun _ctx uri ->
+           let table = match String.split_on_char '/' uri with
+             | _ :: _ :: _ :: t :: _ -> t
+             | _ -> "unknown"
+           in
+           Ok [Mcp_types.{
+             uri;
+             mime_type = Some "application/json";
+             text = Some (Printf.sprintf {|{"table":"%s","rows":42}|} table);
+             blob = None;
+           }])
+  in
+  Eio.Fiber.fork ~sw (fun () ->
+    Server.run server ~transport:server_t ~clock ());
+  let client = Client.create ~transport:client_t ~clock () in
+
+  (match Client.initialize client ~client_name:"t" ~client_version:"1" with
+   | Ok result ->
+     (* Resources capability should be present due to templates *)
+     Alcotest.(check bool) "has resources cap" true
+       (Option.is_some result.capabilities.resources)
+   | Error e -> Alcotest.fail e);
+
+  (* templates/list via low-level request *)
+  (match Client.send_request client ~method_:"resources/templates/list" () with
+   | Ok result ->
+     (match result with
+      | `Assoc fields ->
+        (match List.assoc_opt "resourceTemplates" fields with
+         | Some (`List templates) ->
+           Alcotest.(check int) "one template" 1 (List.length templates)
+         | _ -> Alcotest.fail "missing resourceTemplates")
+      | _ -> Alcotest.fail "expected object")
+   | Error e -> Alcotest.fail ("templates/list: " ^ e));
+
+  Mt.close client_t
+in
+
+(* ── test: resource subscribe/unsubscribe ───── *)
+
+let test_resource_subscribe () =
+  Eio.Switch.run @@ fun sw ->
+  let client_t, server_t = Mt.create_pair () in
+  let res = Mcp_types.make_resource ~uri:"file:///data.json" ~name:"data" () in
+  let server =
+    Server.create ~name:"sub-server" ~version:"1.0" ()
+    |> Server.add_resource res (fun _ctx _uri ->
+      Ok [Mcp_types.{ uri = "file:///data.json"; mime_type = None;
+                       text = Some "{}"; blob = None }])
+  in
+  Eio.Fiber.fork ~sw (fun () ->
+    Server.run server ~transport:server_t ~clock ());
+  let client = Client.create ~transport:client_t ~clock () in
+
+  (match Client.initialize client ~client_name:"t" ~client_version:"1" with
+   | Ok _ -> () | Error e -> Alcotest.fail e);
+
+  (* Subscribe *)
+  (match Client.subscribe_resource client ~uri:"file:///data.json" with
+   | Ok () -> ()
+   | Error e -> Alcotest.fail ("subscribe: " ^ e));
+
+  (* Unsubscribe *)
+  (match Client.unsubscribe_resource client ~uri:"file:///data.json" with
+   | Ok () -> ()
+   | Error e -> Alcotest.fail ("unsubscribe: " ^ e));
+
+  Mt.close client_t
+in
+
 (* ── test suite ──────────────────────────────── *)
 
 Alcotest.run "E2E_memory" [
@@ -209,5 +288,7 @@ Alcotest.run "E2E_memory" [
   "primitives", [
     Alcotest.test_case "prompts" `Quick test_prompts;
     Alcotest.test_case "resources" `Quick test_resources;
+    Alcotest.test_case "resource templates" `Quick test_resource_templates;
+    Alcotest.test_case "resource subscribe" `Quick test_resource_subscribe;
   ];
 ]
