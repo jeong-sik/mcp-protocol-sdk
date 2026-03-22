@@ -38,6 +38,10 @@ jobs:
 
       - name: Run tests
         run: opam exec -- dune runtest
+        env:
+          # Avoid io_uring ENOMEM on GitHub Actions ubuntu runners (low memlock limit).
+          # Forces Eio to use the POSIX backend (poll/epoll) instead of io_uring.
+          EIO_BACKEND: posix
 
   lint:
     name: Lint
