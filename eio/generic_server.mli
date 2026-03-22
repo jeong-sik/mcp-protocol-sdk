@@ -49,6 +49,16 @@ module Make (T : Mcp_protocol.Transport.S) : sig
   val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
   val add_completion_handler : completion_handler -> t -> t
   val add_task_handlers : task_handlers -> t -> t
+
+  (** {2 Ergonomic Registration} *)
+
+  val tool : string -> ?description:string -> ?input_schema:Yojson.Safe.t ->
+    tool_handler -> t -> t
+  val resource : uri:string -> string -> ?description:string -> ?mime_type:string ->
+    resource_handler -> t -> t
+  val prompt : string -> ?description:string -> ?arguments:Mcp_types.prompt_argument list ->
+    prompt_handler -> t -> t
+
   val send_notification : t -> method_:string -> params:Yojson.Safe.t option -> (unit, string) result
 
   (** Run the server's main loop over the given transport.

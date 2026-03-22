@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enabling external functor applications.
 - **E2E memory tests**: Full client-server lifecycle test (initialize, ping, tools/list,
   tools/call, prompts/get, resources/read) running entirely in-memory.
+- **Tool_arg module**: Type-safe tool argument extraction with `required`, `optional`,
+  `optional_opt` field accessors and `string`/`int`/`float`/`bool`/`list_of` extractors.
+  Monadic `let*` binding for chaining required extractions.
+- **Ergonomic registration**: `Server.tool`, `Server.resource`, `Server.prompt` convenience
+  functions that combine definition creation + handler registration in one call.
 - **Typed capabilities**: `server_capabilities` and `client_capabilities` now use typed records
   (`tools_capability`, `resources_capability`, `prompts_capability`) instead of `Yojson.Safe.t option`.
   `logging` and `completions` use `unit option` — `Some ()` = enabled.

@@ -66,6 +66,9 @@ module Notifications = Notifications
 (** Transport layer abstraction *)
 module Transport = Transport
 
+(** Type-safe tool argument extraction *)
+module Tool_arg = Tool_arg
+
 (** OAuth 2.1 types for MCP authentication *)
 module Auth = Auth
 

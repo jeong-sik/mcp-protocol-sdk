@@ -88,6 +88,20 @@ let add_completion_handler handler s =
 let add_task_handlers handlers s =
   { s with task_handlers = Some handlers }
 
+(* ── ergonomic registration ───────────────────────────── *)
+
+let tool name ?description ?input_schema handler s =
+  let t = Mcp_types.make_tool ~name ?description ?input_schema () in
+  add_tool t handler s
+
+let resource ~uri name ?description ?mime_type handler s =
+  let r = Mcp_types.make_resource ~uri ~name ?description ?mime_type () in
+  add_resource r handler s
+
+let prompt name ?description ?arguments handler s =
+  let p = Mcp_types.make_prompt ~name ?description ?arguments () in
+  add_prompt p handler s
+
 (* ── shared client helpers ────────────────────────────── *)
 
 let parse_list_field field_name parser result =

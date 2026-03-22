@@ -17,6 +17,7 @@ module Logging = Logging
 module Sampling = Sampling
 module Notifications = Notifications
 module Transport = Transport
+module Tool_arg = Tool_arg
 module Auth = Auth
 module Protocol = Protocol
 module Resources = Resources

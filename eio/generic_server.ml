@@ -68,6 +68,15 @@ module Make (T : Mcp_protocol.Transport.S) = struct
   let add_task_handlers handlers s =
     { s with handler = Handler.add_task_handlers handlers s.handler }
 
+  let tool name ?description ?input_schema handler s =
+    { s with handler = Handler.tool name ?description ?input_schema handler s.handler }
+
+  let resource ~uri name ?description ?mime_type handler s =
+    { s with handler = Handler.resource ~uri name ?description ?mime_type handler s.handler }
+
+  let prompt name ?description ?arguments handler s =
+    { s with handler = Handler.prompt name ?description ?arguments handler s.handler }
+
   (* ── notification sending ────────────────────────────── *)
 
   let send_notification_via_transport transport ~method_ ~params =
