@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.14.0] - 2026-03-23
 
 ### Added
+- **Generic_server functor**: `Generic_server.Make(T: Transport.S)` produces a transport-agnostic
+  MCP server. Run the same server logic over stdio, in-memory, HTTP, or custom transports.
+- **Generic_client functor**: `Generic_client.Make(T: Transport.S)` produces a transport-agnostic
+  MCP client with the full typed API (initialize, tools, resources, prompts).
+- **Logging middleware**: `Middleware.Logging(T)` wraps any transport with message logging.
+  Demonstrates composable middleware pattern via functor chaining.
+- **Transport re-exported**: `Mcp_protocol.Transport.S` is now accessible from the core library,
+  enabling external functor applications.
+- **E2E memory tests**: Full client-server lifecycle test (initialize, ping, tools/list,
+  tools/call, prompts/get, resources/read) running entirely in-memory.
 - **Typed capabilities**: `server_capabilities` and `client_capabilities` now use typed records
   (`tools_capability`, `resources_capability`, `prompts_capability`) instead of `Yojson.Safe.t option`.
   `logging` and `completions` use `unit option` — `Some ()` = enabled.
