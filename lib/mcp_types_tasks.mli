@@ -11,6 +11,33 @@ val task_status_to_yojson : task_status -> Yojson.Safe.t
 val task_status_of_yojson : Yojson.Safe.t -> (task_status, string) result
 val task_status_is_terminal : task_status -> bool
 
+(** Terminal task statuses — tasks in these states cannot transition further. *)
+type terminal_status =
+  | Terminal_completed
+  | Terminal_failed
+  | Terminal_cancelled
+
+(** Active task statuses — tasks that are still in progress. *)
+type active_status =
+  | Active_working
+  | Active_input_required
+
+(** Classified view of task_status — separates terminal from active at the type level.
+    Functions that should only accept active tasks can take [active_status],
+    and functions that should only accept terminal tasks can take [terminal_status]. *)
+type classified_status =
+  | Terminal of terminal_status
+  | Active of active_status
+
+(** Classify a task_status into terminal or active. *)
+val classify_status : task_status -> classified_status
+
+(** Convert terminal_status back to task_status. *)
+val of_terminal : terminal_status -> task_status
+
+(** Convert active_status back to task_status. *)
+val of_active : active_status -> task_status
+
 type task = {
   task_id: string;
   status: task_status;

@@ -88,6 +88,20 @@ let add_completion_handler handler s =
 let add_task_handlers handlers s =
   { s with task_handlers = Some handlers }
 
+(* ── ergonomic registration ───────────────────────────── *)
+
+let tool name ?description ?input_schema handler s =
+  let t = Mcp_types.make_tool ~name ?description ?input_schema () in
+  add_tool t handler s
+
+let resource ~uri name ?description ?mime_type handler s =
+  let r = Mcp_types.make_resource ~uri ~name ?description ?mime_type () in
+  add_resource r handler s
+
+let prompt name ?description ?arguments handler s =
+  let p = Mcp_types.make_prompt ~name ?description ?arguments () in
+  add_prompt p handler s
+
 (* ── shared client helpers ────────────────────────────── *)
 
 let parse_list_field field_name parser result =
@@ -107,19 +121,17 @@ let parse_list_field field_name parser result =
 
 let build_initialize_params ~has_sampling ~has_roots ~has_elicitation
     ~client_name ~client_version =
-  let caps_fields =
-    (if has_sampling then [("sampling", `Assoc [])] else []) @
-    (if has_roots then [("roots", `Assoc [("listChanged", `Bool false)])] else []) @
-    (if has_elicitation then [("elicitation", `Assoc [])] else [])
-  in
-  `Assoc [
-    ("protocolVersion", `String Version.latest);
-    ("capabilities", `Assoc caps_fields);
-    ("clientInfo", `Assoc [
-      ("name", `String client_name);
-      ("version", `String client_version);
-    ]);
-  ]
+  let caps : Mcp_types.client_capabilities = {
+    roots = if has_roots then Some { list_changed = Some false } else None;
+    sampling = if has_sampling then Some () else None;
+    elicitation = if has_elicitation then Some () else None;
+    experimental = None;
+  } in
+  Mcp_types.initialize_params_to_yojson {
+    protocol_version = Version.latest;
+    capabilities = caps;
+    client_info = { name = client_name; version = client_version };
+  }
 
 (* ── accessors ───────────────────────────────────────── *)
 
@@ -134,21 +146,21 @@ let subscribed_uris s = StringSet.elements (Atomic.get s.subscribed_uris)
 (* ── capabilities ─────────────────────────────────────── *)
 
 let server_capabilities s =
-  let tools_cap =
+  let tools_cap : Mcp_types.tools_capability option =
     if s.tools = [] then None
-    else Some (`Assoc [("listChanged", `Bool false)])
+    else Some { list_changed = Some false }
   in
-  let resources_cap =
+  let resources_cap : Mcp_types.resources_capability option =
     if s.resources = [] then None
-    else Some (`Assoc [("listChanged", `Bool false); ("subscribe", `Bool true)])
+    else Some { subscribe = Some true; list_changed = Some false }
   in
-  let prompts_cap =
+  let prompts_cap : Mcp_types.prompts_capability option =
     if s.prompts = [] then None
-    else Some (`Assoc [("listChanged", `Bool false)])
+    else Some { list_changed = Some false }
   in
-  let logging_cap = Some (`Assoc []) in
-  let completion_cap = match s.completion_handler with
-    | Some _ -> Some (`Assoc [])
+  let logging_cap = Some () in
+  let completions_cap = match s.completion_handler with
+    | Some _ -> Some ()
     | None -> None
   in
   let tasks_cap = match s.task_handlers with
@@ -159,7 +171,6 @@ let server_capabilities s =
     | None -> None
   in
   let experimental_fields =
-    (match completion_cap with Some c -> [("completion", c)] | None -> []) @
     (match tasks_cap with Some t -> [("tasks", t)] | None -> [])
   in
   let experimental = match experimental_fields with
@@ -171,6 +182,7 @@ let server_capabilities s =
     resources = resources_cap;
     prompts = prompts_cap;
     logging = logging_cap;
+    completions = completions_cap;
     experimental;
   }
 

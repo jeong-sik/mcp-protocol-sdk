@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-03-23
+
+### Added
+- **Generic_server functor**: `Generic_server.Make(T: Transport.S)` produces a transport-agnostic
+  MCP server. Run the same server logic over stdio, in-memory, HTTP, or custom transports.
+- **Generic_client functor**: `Generic_client.Make(T: Transport.S)` produces a transport-agnostic
+  MCP client with the full typed API (initialize, tools, resources, prompts).
+- **Logging middleware**: `Middleware.Logging(T)` wraps any transport with message logging.
+  Demonstrates composable middleware pattern via functor chaining.
+- **Transport re-exported**: `Mcp_protocol.Transport.S` is now accessible from the core library,
+  enabling external functor applications.
+- **E2E memory tests**: Full client-server lifecycle test (initialize, ping, tools/list,
+  tools/call, prompts/get, resources/read) running entirely in-memory.
+- **Tool_arg module**: Type-safe tool argument extraction with `required`, `optional`,
+  `optional_opt` field accessors and `string`/`int`/`float`/`bool`/`list_of` extractors.
+  Monadic `let*` binding for chaining required extractions.
+- **Ergonomic registration**: `Server.tool`, `Server.resource`, `Server.prompt` convenience
+  functions that combine definition creation + handler registration in one call.
+- **Typed capabilities**: `server_capabilities` and `client_capabilities` now use typed records
+  (`tools_capability`, `resources_capability`, `prompts_capability`) instead of `Yojson.Safe.t option`.
+  `logging` and `completions` use `unit option` — `Some ()` = enabled.
+- **Tool `outputSchema`**: Tools can declare an output JSON Schema (`output_schema` field).
+- **Tool `execution`**: Tools can declare task support level via `execution.task_support`
+  (`Task_required | Task_optional | Task_forbidden`).
+- **Elicitation mode variant**: `elicitation_params.mode` is now `elicitation_mode option`
+  (`Form | Url`) instead of `string option`. URL mode adds `url` field for redirect target.
+- **Classified task status**: `terminal_status`, `active_status`, and `classified_status` types
+  with `classify_status`, `of_terminal`, `of_active` functions. Enables compile-time separation
+  of terminal vs active task states without breaking existing `task_status` type.
+- **In-memory transport**: `Memory_transport.create_pair ()` returns paired transports for
+  testing without IO. Messages pass as OCaml values (zero serialization overhead).
+
+### Changed
+- **BREAKING**: `server_capabilities.tools` is `tools_capability option` (was `Yojson.Safe.t option`).
+- **BREAKING**: `server_capabilities.logging` is `unit option` (was `Yojson.Safe.t option`).
+- **BREAKING**: `client_capabilities.sampling` is `unit option` (was `Yojson.Safe.t option`).
+- **BREAKING**: `client_capabilities.elicitation` is `unit option` (was `Yojson.Safe.t option`).
+- **BREAKING**: `tool` record has two new fields: `output_schema` and `execution`.
+- `server_capabilities` gains `completions: unit option` field (was in `experimental`).
+- `Handler.build_initialize_params` uses typed capabilities and `initialize_params_to_yojson`.
+
 ## [0.12.1] - 2026-03-16
 
 ### Fixed

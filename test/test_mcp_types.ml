@@ -38,6 +38,8 @@ let test_tool_roundtrip () =
     title = None;
     annotations = None;
     icon = None;
+    output_schema = None;
+    execution = None;
   } in
   let j = Mcp_types.tool_to_yojson tool in
   match Mcp_types.tool_of_yojson j with
@@ -54,6 +56,8 @@ let test_tool_no_description () =
     title = None;
     annotations = None;
     icon = None;
+    output_schema = None;
+    execution = None;
   } in
   let j = Mcp_types.tool_to_yojson tool in
   match Mcp_types.tool_of_yojson j with
@@ -71,6 +75,8 @@ let test_tool_def_alias () =
     title = None;
     annotations = None;
     icon = None;
+    output_schema = None;
+    execution = None;
   } in
   let j = Mcp_types.tool_to_yojson td in
   match Mcp_types.tool_of_yojson j with
@@ -133,17 +139,19 @@ let test_role_roundtrip () =
 
 let test_capabilities_roundtrip () =
   let caps : Mcp_types.server_capabilities = {
-    tools = Some (`Assoc []);
-    resources = Some (`Assoc []);
+    tools = Some { list_changed = Some true };
+    resources = Some { subscribe = Some true; list_changed = None };
     prompts = None;
-    logging = None;
+    logging = Some ();
+    completions = None;
     experimental = None;
   } in
   let j = Mcp_types.server_capabilities_to_yojson caps in
   match Mcp_types.server_capabilities_of_yojson j with
   | Ok decoded ->
     Alcotest.(check bool) "tools present" true (Option.is_some decoded.tools);
-    Alcotest.(check bool) "prompts absent" true (Option.is_none decoded.prompts)
+    Alcotest.(check bool) "prompts absent" true (Option.is_none decoded.prompts);
+    Alcotest.(check bool) "logging present" true (Option.is_some decoded.logging)
   | Error e -> Alcotest.fail e
 
 (* --- initialize --- *)
@@ -152,8 +160,8 @@ let test_initialize_params_roundtrip () =
   let params : Mcp_types.initialize_params = {
     protocol_version = "2025-03-26";
     capabilities = {
-      roots = None;
-      sampling = None;
+      roots = Some { list_changed = Some false };
+      sampling = Some ();
       elicitation = None;
       experimental = None;
     };
@@ -170,10 +178,11 @@ let test_initialize_result_roundtrip () =
   let result : Mcp_types.initialize_result = {
     protocol_version = "2025-03-26";
     capabilities = {
-      tools = Some (`Assoc []);
+      tools = Some { list_changed = Some false };
       resources = None;
       prompts = None;
-      logging = None;
+      logging = Some ();
+      completions = None;
       experimental = None;
     };
     server_info = { name = "test-server"; version = "0.1.0" };
@@ -698,6 +707,7 @@ let test_elicitation_params_roundtrip () =
     message = "Please enter your name";
     requested_schema = Some schema;
     mode = None;
+    url = None;
   } in
   let j = Mcp_types.elicitation_params_to_yojson params in
   (* Check requestedSchema key (camelCase) *)
@@ -717,6 +727,7 @@ let test_elicitation_params_no_schema () =
     message = "Confirm?";
     requested_schema = None;
     mode = None;
+    url = None;
   } in
   let j = Mcp_types.elicitation_params_to_yojson params in
   match Mcp_types.elicitation_params_of_yojson j with
@@ -806,6 +817,8 @@ let test_tool_with_icon () =
     title = None;
     annotations = None;
     icon = Some "https://example.com/icon.png";
+    output_schema = None;
+    execution = None;
   } in
   let j = Mcp_types.tool_to_yojson t in
   match Mcp_types.tool_of_yojson j with
@@ -854,24 +867,76 @@ let test_prompt_with_icon () =
     Alcotest.(check (option string)) "icon" (Some "https://example.com/prompt.svg") decoded.icon
   | Error e -> Alcotest.fail e
 
-(* --- URL Elicitation Mode --- *)
+(* --- Elicitation Mode Variant --- *)
 
-let test_elicitation_url_mode () =
+let test_elicitation_mode_roundtrip () =
+  (* Form -> "form" -> Form *)
+  let j_form = Mcp_types.elicitation_mode_to_yojson Form in
+  Alcotest.(check json) "Form serializes to form" (`String "form") j_form;
+  (match Mcp_types.elicitation_mode_of_yojson j_form with
+   | Ok Form -> ()
+   | Ok Url -> Alcotest.fail "expected Form, got Url"
+   | Error e -> Alcotest.fail e);
+  (* Url -> "url" -> Url *)
+  let j_url = Mcp_types.elicitation_mode_to_yojson Url in
+  Alcotest.(check json) "Url serializes to url" (`String "url") j_url;
+  (match Mcp_types.elicitation_mode_of_yojson j_url with
+   | Ok Url -> ()
+   | Ok Form -> Alcotest.fail "expected Url, got Form"
+   | Error e -> Alcotest.fail e)
+
+let test_elicitation_mode_invalid () =
+  match Mcp_types.elicitation_mode_of_yojson (`String "unknown") with
+  | Error _ -> ()
+  | Ok _ -> Alcotest.fail "expected error for invalid mode"
+
+let test_elicitation_params_form_mode () =
+  let schema : Mcp_types.elicitation_schema = {
+    type_ = "object";
+    properties = [("q", `Assoc [("type", `String "string")])];
+    required = None;
+  } in
   let params : Mcp_types.elicitation_params = {
-    message = "Enter the URL";
-    requested_schema = None;
-    mode = Some "url";
+    message = "Please fill the form";
+    requested_schema = Some schema;
+    mode = Some Form;
+    url = None;
   } in
   let j = Mcp_types.elicitation_params_to_yojson params in
-  (* Check mode key is present *)
   (match j with
    | `Assoc fields ->
-     Alcotest.(check bool) "mode key present"
-       true (List.mem_assoc "mode" fields)
+     Alcotest.(check json) "mode is form" (`String "form") (List.assoc "mode" fields)
    | _ -> Alcotest.fail "expected object");
   match Mcp_types.elicitation_params_of_yojson j with
   | Ok decoded ->
-    Alcotest.(check (option string)) "mode" (Some "url") decoded.mode
+    Alcotest.(check string) "message" "Please fill the form" decoded.message;
+    Alcotest.(check bool) "schema present" true (Option.is_some decoded.requested_schema);
+    (match decoded.mode with
+     | Some Form -> ()
+     | Some Url -> Alcotest.fail "expected Form mode"
+     | None -> Alcotest.fail "expected Some mode")
+  | Error e -> Alcotest.fail e
+
+let test_elicitation_params_url_mode () =
+  let params : Mcp_types.elicitation_params = {
+    message = "Visit the URL to authenticate";
+    requested_schema = None;
+    mode = Some Url;
+    url = Some "https://example.com/auth";
+  } in
+  let j = Mcp_types.elicitation_params_to_yojson params in
+  (match j with
+   | `Assoc fields ->
+     Alcotest.(check json) "mode is url" (`String "url") (List.assoc "mode" fields);
+     Alcotest.(check json) "url field" (`String "https://example.com/auth") (List.assoc "url" fields)
+   | _ -> Alcotest.fail "expected object");
+  match Mcp_types.elicitation_params_of_yojson j with
+  | Ok decoded ->
+    (match decoded.mode with
+     | Some Url -> ()
+     | Some Form -> Alcotest.fail "expected Url mode"
+     | None -> Alcotest.fail "expected Some mode");
+    Alcotest.(check (option string)) "url" (Some "https://example.com/auth") decoded.url
   | Error e -> Alcotest.fail e
 
 (* --- Suite --- *)
@@ -980,7 +1045,12 @@ let () =
       Alcotest.test_case "action round-trip" `Quick test_elicitation_action_roundtrip;
       Alcotest.test_case "result accept" `Quick test_elicitation_result_accept;
       Alcotest.test_case "result decline" `Quick test_elicitation_result_decline;
-      Alcotest.test_case "url mode" `Quick test_elicitation_url_mode;
+    ];
+    "elicitation_mode", [
+      Alcotest.test_case "mode roundtrip" `Quick test_elicitation_mode_roundtrip;
+      Alcotest.test_case "mode invalid" `Quick test_elicitation_mode_invalid;
+      Alcotest.test_case "params form mode" `Quick test_elicitation_params_form_mode;
+      Alcotest.test_case "params url mode" `Quick test_elicitation_params_url_mode;
     ];
     "icons", [
       Alcotest.test_case "tool with icon" `Quick test_tool_with_icon;

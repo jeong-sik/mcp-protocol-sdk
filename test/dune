@@ -16,7 +16,7 @@
  (libraries mcp_protocol alcotest))
 
 (tests
- (names test_stdio_transport test_server test_client test_integration)
+ (names test_stdio_transport test_server test_client test_integration test_memory_transport test_generic_server test_e2e_memory test_tool_arg)
  (libraries mcp_protocol mcp_protocol_eio eio eio.unix eio_main alcotest yojson))
 
 (tests

@@ -102,17 +102,39 @@ type tool_annotations = {
 }
 [@@deriving yojson]
 
+(** {2 Tool Execution} *)
+
+(** Tool execution configuration (MCP 2025-11-25).
+    Declares whether the tool supports task-augmented requests. *)
+type tool_execution = {
+  task_support: Mcp_types_tasks.task_execution_support;
+}
+
+let tool_execution_to_yojson (e : tool_execution) =
+  `Assoc [("taskSupport", Mcp_types_tasks.task_execution_support_to_yojson e.task_support)]
+
+let tool_execution_of_yojson = function
+  | `Assoc fields ->
+    (match List.assoc_opt "taskSupport" fields with
+     | Some j ->
+       Result.map (fun ts -> { task_support = ts })
+         (Mcp_types_tasks.task_execution_support_of_yojson j)
+     | None -> Error "tool_execution: missing 'taskSupport'")
+  | _ -> Error "tool_execution: expected object"
+
 (** {2 Tools} *)
 
 (** Tool definition - a function that can be called.
-    MCP 2025-11-25 adds optional title and annotations fields. *)
+    MCP 2025-11-25 adds optional title, annotations, outputSchema, and execution fields. *)
 type tool = {
   name: string;
   description: string option;    [@default None]
   input_schema: Yojson.Safe.t;   [@key "inputSchema"]
+  output_schema: Yojson.Safe.t option; [@default None] [@key "outputSchema"]
   title: string option;          [@default None]
   annotations: tool_annotations option; [@default None]
   icon: string option;           [@default None]
+  execution: tool_execution option; [@default None]
 }
 [@@deriving yojson]
 
@@ -416,26 +438,146 @@ type prompt_result = {
 }
 [@@deriving yojson]
 
+(** {2 Roots} *)
+
+(** A root that a client exposes to the server (filesystem/workspace root).
+    Reference: https://modelcontextprotocol.io/docs/concepts/roots *)
+type root = {
+  uri: string;
+  name: string option; [@default None]
+}
+[@@deriving yojson]
+
+(** Capability for roots — declares whether the client supports
+    roots/list_changed notifications. *)
+type roots_capability = {
+  list_changed: bool option; [@default None] [@key "listChanged"]
+}
+[@@deriving yojson]
+
+(** Create a root value *)
+let make_root ~uri ?name () = { uri; name }
+
+(** {2 Capability Sub-types} *)
+
+type tools_capability = {
+  list_changed: bool option; [@default None] [@key "listChanged"]
+}
+[@@deriving yojson]
+
+type resources_capability = {
+  subscribe: bool option; [@default None]
+  list_changed: bool option; [@default None] [@key "listChanged"]
+}
+[@@deriving yojson]
+
+type prompts_capability = {
+  list_changed: bool option; [@default None] [@key "listChanged"]
+}
+[@@deriving yojson]
+
 (** {2 Capabilities} *)
 
-(** Server capabilities *)
+(** Server capabilities — typed per MCP 2025-11-25 spec.
+    [logging] and [completions] have no sub-fields; [Some ()] = enabled. *)
 type server_capabilities = {
-  tools: Yojson.Safe.t option; [@default None]
-  resources: Yojson.Safe.t option; [@default None]
-  prompts: Yojson.Safe.t option; [@default None]
-  logging: Yojson.Safe.t option; [@default None]
-  experimental: Yojson.Safe.t option; [@default None]
+  tools: tools_capability option;
+  resources: resources_capability option;
+  prompts: prompts_capability option;
+  logging: unit option;
+  completions: unit option;
+  experimental: Yojson.Safe.t option;
 }
-[@@deriving yojson]
 
-(** Client capabilities *)
+let server_capabilities_to_yojson (c : server_capabilities) =
+  let fields = [] in
+  let fields = match c.experimental with
+    | Some j -> ("experimental", j) :: fields | None -> fields
+  in
+  let fields = match c.completions with
+    | Some () -> ("completions", `Assoc []) :: fields | None -> fields
+  in
+  let fields = match c.logging with
+    | Some () -> ("logging", `Assoc []) :: fields | None -> fields
+  in
+  let fields = match c.prompts with
+    | Some p -> ("prompts", prompts_capability_to_yojson p) :: fields | None -> fields
+  in
+  let fields = match c.resources with
+    | Some r -> ("resources", resources_capability_to_yojson r) :: fields | None -> fields
+  in
+  let fields = match c.tools with
+    | Some t -> ("tools", tools_capability_to_yojson t) :: fields | None -> fields
+  in
+  `Assoc fields
+
+let server_capabilities_of_yojson = function
+  | `Assoc fields ->
+    let tools = match List.assoc_opt "tools" fields with
+      | Some j -> (match tools_capability_of_yojson j with Ok v -> Some v | Error _ -> None)
+      | None -> None
+    in
+    let resources = match List.assoc_opt "resources" fields with
+      | Some j -> (match resources_capability_of_yojson j with Ok v -> Some v | Error _ -> None)
+      | None -> None
+    in
+    let prompts = match List.assoc_opt "prompts" fields with
+      | Some j -> (match prompts_capability_of_yojson j with Ok v -> Some v | Error _ -> None)
+      | None -> None
+    in
+    let logging = match List.assoc_opt "logging" fields with
+      | Some _ -> Some () | None -> None
+    in
+    let completions = match List.assoc_opt "completions" fields with
+      | Some _ -> Some () | None -> None
+    in
+    let experimental = match List.assoc_opt "experimental" fields with
+      | Some (`Null) -> None | Some j -> Some j | None -> None
+    in
+    Ok { tools; resources; prompts; logging; completions; experimental }
+  | _ -> Error "server_capabilities: expected object"
+
+(** Client capabilities — typed per MCP 2025-11-25 spec. *)
 type client_capabilities = {
-  roots: Yojson.Safe.t option; [@default None]
-  sampling: Yojson.Safe.t option; [@default None]
-  elicitation: Yojson.Safe.t option; [@default None]
-  experimental: Yojson.Safe.t option; [@default None]
+  roots: roots_capability option;
+  sampling: unit option;
+  elicitation: unit option;
+  experimental: Yojson.Safe.t option;
 }
-[@@deriving yojson]
+
+let client_capabilities_to_yojson (c : client_capabilities) =
+  let fields = [] in
+  let fields = match c.experimental with
+    | Some j -> ("experimental", j) :: fields | None -> fields
+  in
+  let fields = match c.elicitation with
+    | Some () -> ("elicitation", `Assoc []) :: fields | None -> fields
+  in
+  let fields = match c.sampling with
+    | Some () -> ("sampling", `Assoc []) :: fields | None -> fields
+  in
+  let fields = match c.roots with
+    | Some r -> ("roots", roots_capability_to_yojson r) :: fields | None -> fields
+  in
+  `Assoc fields
+
+let client_capabilities_of_yojson = function
+  | `Assoc fields ->
+    let roots = match List.assoc_opt "roots" fields with
+      | Some j -> (match roots_capability_of_yojson j with Ok v -> Some v | Error _ -> None)
+      | None -> None
+    in
+    let sampling = match List.assoc_opt "sampling" fields with
+      | Some _ -> Some () | None -> None
+    in
+    let elicitation = match List.assoc_opt "elicitation" fields with
+      | Some _ -> Some () | None -> None
+    in
+    let experimental = match List.assoc_opt "experimental" fields with
+      | Some (`Null) -> None | Some j -> Some j | None -> None
+    in
+    Ok { roots; sampling; elicitation; experimental }
+  | _ -> Error "client_capabilities: expected object"
 
 (** {2 Initialize} *)
 
@@ -529,8 +671,9 @@ let paginated_result_of_yojson item_of_yojson = function
 
 (** Create a tool definition *)
 let make_tool ~name ?description ?title ?annotations ?icon
-    ?(input_schema = `Assoc [("type", `String "object")]) () =
-  { name; description; input_schema; title; annotations; icon }
+    ?(input_schema = `Assoc [("type", `String "object")])
+    ?output_schema ?execution () =
+  { name; description; input_schema; output_schema; title; annotations; icon; execution }
 
 (** Create a resource definition *)
 let make_resource ~uri ~name ?description ?mime_type ?icon () =
@@ -574,26 +717,6 @@ let tool_result_of_error message =
   { content = [make_text_content message];
     is_error = Some true;
     structured_content = None }
-
-(** {2 Roots} *)
-
-(** A root that a client exposes to the server (filesystem/workspace root).
-    Reference: https://modelcontextprotocol.io/docs/concepts/roots *)
-type root = {
-  uri: string;
-  name: string option; [@default None]
-}
-[@@deriving yojson]
-
-(** Capability for roots — declares whether the client supports
-    roots/list_changed notifications. *)
-type roots_capability = {
-  list_changed: bool option; [@default None] [@key "listChanged"]
-}
-[@@deriving yojson]
-
-(** Create a root value *)
-let make_root ~uri ?name () = { uri; name }
 
 (** {2 Completion} *)
 include Mcp_types_completion

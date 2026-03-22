@@ -11,6 +11,8 @@ let echo_tool : Mcp_types.tool = {
   title = None;
   annotations = None;
   icon = None;
+  output_schema = None;
+  execution = None;
 }
 
 let test_resource : Mcp_types.resource = {
@@ -102,6 +104,8 @@ let sampling_tool : Mcp_types.tool = {
   title = None;
   annotations = None;
   icon = None;
+  output_schema = None;
+  execution = None;
 }
 
 (** Tool that calls ctx.request_roots_list mid-request. *)
@@ -112,6 +116,8 @@ let roots_tool : Mcp_types.tool = {
   title = None;
   annotations = None;
   icon = None;
+  output_schema = None;
+  execution = None;
 }
 
 (** Tool that calls ctx.request_elicitation mid-request. *)
@@ -122,6 +128,8 @@ let elicit_tool : Mcp_types.tool = {
   title = None;
   annotations = None;
   icon = None;
+  output_schema = None;
+  execution = None;
 }
 
 (** Tool that calls both request_sampling and request_roots_list sequentially. *)
@@ -132,6 +140,8 @@ let multi_tool : Mcp_types.tool = {
   title = None;
   annotations = None;
   icon = None;
+  output_schema = None;
+  execution = None;
 }
 
 let make_sampling_server () =
@@ -179,6 +189,7 @@ let make_elicitation_server () =
       message = "Do you confirm?";
       requested_schema = None;
       mode = None;
+      url = None;
     } in
     match ctx.request_elicitation params with
     | Ok result ->

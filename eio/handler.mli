@@ -63,6 +63,31 @@ val create : name:string -> version:string -> ?instructions:string -> unit -> t
 val add_tool : Mcp_types.tool -> tool_handler -> t -> t
 val add_resource : Mcp_types.resource -> resource_handler -> t -> t
 val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
+
+(** {2 Ergonomic Registration}
+
+    Convenience functions that combine definition + registration in one call. *)
+
+(** Register a tool by name. Creates the tool definition and registers the handler.
+    {[
+      handler
+      |> Handler.tool "echo" ~description:"Echo input"
+           (fun _ctx _name args ->
+              let open Tool_arg in
+              let* text = required args "text" string in
+              Ok (Mcp_types.tool_result_of_text text))
+    ]}
+*)
+val tool : string -> ?description:string -> ?input_schema:Yojson.Safe.t ->
+  tool_handler -> t -> t
+
+(** Register a resource by URI and name. *)
+val resource : uri:string -> string -> ?description:string -> ?mime_type:string ->
+  resource_handler -> t -> t
+
+(** Register a prompt by name. *)
+val prompt : string -> ?description:string -> ?arguments:Mcp_types.prompt_argument list ->
+  prompt_handler -> t -> t
 val add_completion_handler : completion_handler -> t -> t
 val add_task_handlers : task_handlers -> t -> t
 

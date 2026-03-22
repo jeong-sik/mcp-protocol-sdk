@@ -39,11 +39,27 @@ let elicitation_schema_of_yojson = function
      | Error e, _ | _, Error e -> Error e)
   | _ -> Error "elicitation_schema: expected object"
 
+(** Elicitation mode — determines how user input is collected.
+    Form: server provides schema, client renders form.
+    Url: server provides URL, client opens it for the user. *)
+type elicitation_mode = Form | Url
+
+let elicitation_mode_to_yojson = function
+  | Form -> `String "form"
+  | Url -> `String "url"
+
+let elicitation_mode_of_yojson = function
+  | `String "form" -> Ok Form
+  | `String "url" -> Ok Url
+  | `String s -> Error ("elicitation_mode: unknown mode '" ^ s ^ "'")
+  | _ -> Error "elicitation_mode: expected string"
+
 (** Parameters for elicitation/create request *)
 type elicitation_params = {
   message: string;
   requested_schema: elicitation_schema option; [@default None]
-  mode: string option;
+  mode: elicitation_mode option;
+  url: string option;  (** URL for Url mode — where to direct the user *)
 }
 
 let elicitation_params_to_yojson (p : elicitation_params) =
@@ -53,7 +69,11 @@ let elicitation_params_to_yojson (p : elicitation_params) =
     | None -> fields
   in
   let fields = match p.mode with
-    | Some m -> ("mode", `String m) :: fields
+    | Some m -> ("mode", elicitation_mode_to_yojson m) :: fields
+    | None -> fields
+  in
+  let fields = match p.url with
+    | Some u -> ("url", `String u) :: fields
     | None -> fields
   in
   `Assoc fields
@@ -69,10 +89,16 @@ let elicitation_params_of_yojson = function
       | None -> None
     in
     let mode = match List.assoc_opt "mode" fields with
+      | Some j -> (match elicitation_mode_of_yojson j with Ok m -> Ok (Some m) | Error e -> Error e)
+      | None -> Ok None
+    in
+    let url = match List.assoc_opt "url" fields with
       | Some (`String s) -> Some s
       | _ -> None
     in
-    Result.map (fun message -> { message; requested_schema; mode }) message
+    (match message, mode with
+     | Ok message, Ok mode -> Ok { message; requested_schema; mode; url }
+     | Error e, _ | _, Error e -> Error e)
   | _ -> Error "elicitation_params: expected object"
 
 (** User response action for elicitation *)

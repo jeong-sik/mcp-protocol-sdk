@@ -2,4 +2,4 @@
  (name mcp_protocol_eio)
  (public_name mcp_protocol_eio)
  (libraries mcp_protocol eio unix yojson)
- (modules stdio_transport handler server client time_compat resilience))
+ (modules stdio_transport memory_transport handler server generic_server client generic_client middleware time_compat resilience))

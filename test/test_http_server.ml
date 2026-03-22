@@ -33,6 +33,8 @@ let echo_tool =
     title = None;
     annotations = None;
     icon = None;
+    output_schema = None;
+    execution = None;
   }
 
 let echo_handler _ctx _name args =
@@ -361,6 +363,8 @@ let notify_tool =
     title = None;
     annotations = None;
     icon = None;
+    output_schema = None;
+    execution = None;
   }
 
 let notify_handler ctx _name _args =

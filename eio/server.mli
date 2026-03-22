@@ -74,6 +74,20 @@ val add_resource : Mcp_types.resource -> resource_handler -> t -> t
 (** Register a prompt and its handler. *)
 val add_prompt : Mcp_types.prompt -> prompt_handler -> t -> t
 
+(** {2 Ergonomic Registration} *)
+
+(** Register a tool by name (creates definition automatically). *)
+val tool : string -> ?description:string -> ?input_schema:Yojson.Safe.t ->
+  tool_handler -> t -> t
+
+(** Register a resource by URI and name. *)
+val resource : uri:string -> string -> ?description:string -> ?mime_type:string ->
+  resource_handler -> t -> t
+
+(** Register a prompt by name. *)
+val prompt : string -> ?description:string -> ?arguments:Mcp_types.prompt_argument list ->
+  prompt_handler -> t -> t
+
 (** Register a completion handler. Only one handler is supported;
     registering a new one replaces the previous. *)
 val add_completion_handler : completion_handler -> t -> t

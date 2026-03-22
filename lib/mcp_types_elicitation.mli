@@ -9,10 +9,19 @@ type elicitation_schema = {
 val elicitation_schema_to_yojson : elicitation_schema -> Yojson.Safe.t
 val elicitation_schema_of_yojson : Yojson.Safe.t -> (elicitation_schema, string) result
 
+(** Elicitation mode — determines how user input is collected.
+    Form: server provides schema, client renders form.
+    Url: server provides URL, client opens it for the user. *)
+type elicitation_mode = Form | Url
+
+val elicitation_mode_to_yojson : elicitation_mode -> Yojson.Safe.t
+val elicitation_mode_of_yojson : Yojson.Safe.t -> (elicitation_mode, string) result
+
 type elicitation_params = {
   message: string;
   requested_schema: elicitation_schema option;
-  mode: string option;
+  mode: elicitation_mode option;
+  url: string option;
 }
 
 val elicitation_params_to_yojson : elicitation_params -> Yojson.Safe.t

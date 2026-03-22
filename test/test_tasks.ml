@@ -215,6 +215,37 @@ let test_version_features_has_tasks () =
   let f_latest = Version.features_of_version "2025-11-25" in
   Alcotest.(check bool) "2025-11-25 has tasks" true f_latest.has_tasks
 
+(* --- classified_status --- *)
+
+let test_classified_status () =
+  (* Active statuses *)
+  (match Mcp_types.classify_status Working with
+   | Active Active_working -> ()
+   | _ -> Alcotest.fail "Working should be Active");
+  (match Mcp_types.classify_status Input_required with
+   | Active Active_input_required -> ()
+   | _ -> Alcotest.fail "Input_required should be Active");
+  (* Terminal statuses *)
+  (match Mcp_types.classify_status Completed with
+   | Terminal Terminal_completed -> ()
+   | _ -> Alcotest.fail "Completed should be Terminal");
+  (match Mcp_types.classify_status Failed with
+   | Terminal Terminal_failed -> ()
+   | _ -> Alcotest.fail "Failed should be Terminal");
+  (match Mcp_types.classify_status Cancelled with
+   | Terminal Terminal_cancelled -> ()
+   | _ -> Alcotest.fail "Cancelled should be Terminal");
+  (* Roundtrip *)
+  let check_roundtrip status =
+    let classified = Mcp_types.classify_status status in
+    let back = match classified with
+      | Terminal t -> Mcp_types.of_terminal t
+      | Active a -> Mcp_types.of_active a
+    in
+    Alcotest.(check bool) "roundtrip" true (status = back)
+  in
+  List.iter check_roundtrip [Working; Input_required; Completed; Failed; Cancelled]
+
 (* --- Suite --- *)
 
 let () =
@@ -248,5 +279,8 @@ let () =
     ];
     "version_features", [
       Alcotest.test_case "has_tasks" `Quick test_version_features_has_tasks;
+    ];
+    "classified_status", [
+      Alcotest.test_case "classify and roundtrip" `Quick test_classified_status;
     ];
   ]
