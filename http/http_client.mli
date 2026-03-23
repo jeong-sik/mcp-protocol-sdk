@@ -33,13 +33,15 @@ type t
     @param endpoint Full URL to the MCP HTTP endpoint (e.g. "http://host:port/mcp")
     @param net Eio network capability
     @param sw Eio switch for the client lifetime
+    @param headers Extra HTTP headers added to every request.
     @param clock Optional Eio clock for request timeouts.
       When provided, each request times out after 60 seconds.
       On timeout a [notifications/cancelled] notification is sent to the server.
     @param access_token Optional OAuth 2.1 bearer token.
       When provided, all requests include an Authorization: Bearer header. *)
 val create : endpoint:string -> net:_ Eio.Net.t -> sw:Eio.Switch.t ->
-  ?clock:_ Eio.Time.clock -> ?access_token:string -> unit -> t
+  ?headers:(string * string) list -> ?clock:_ Eio.Time.clock ->
+  ?access_token:string -> unit -> t
 
 (** {2 Callback Registration}
 
@@ -77,12 +79,16 @@ val ping : t -> (unit, string) result
 
 val list_tools : ?cursor:string -> t -> (Mcp_types.tool list, string) result
 
+val list_tools_all : t -> (Mcp_types.tool list, string) result
+
 val call_tool : t -> name:string -> ?arguments:Yojson.Safe.t -> unit ->
   (Mcp_types.tool_result, string) result
 
 (** {2 Resources} *)
 
 val list_resources : ?cursor:string -> t -> (Mcp_types.resource list, string) result
+
+val list_resources_all : t -> (Mcp_types.resource list, string) result
 
 val read_resource : t -> uri:string ->
   (Mcp_types.resource_contents list, string) result
@@ -100,6 +106,8 @@ val list_resource_templates : ?cursor:string -> t ->
 (** {2 Prompts} *)
 
 val list_prompts : ?cursor:string -> t -> (Mcp_types.prompt list, string) result
+
+val list_prompts_all : t -> (Mcp_types.prompt list, string) result
 
 val get_prompt : t -> name:string -> ?arguments:(string * string) list -> unit ->
   (Mcp_types.prompt_result, string) result

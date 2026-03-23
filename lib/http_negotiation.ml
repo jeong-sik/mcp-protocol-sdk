@@ -87,7 +87,13 @@ let accepts_json header =
 
 (** Check if client accepts streamable MCP (JSON or SSE) *)
 let accepts_streamable_mcp header =
-  accepts_json header || accepts_sse header
+  let media_types = parse_accept_header header in
+  let accepts_exact type_ subtype =
+    List.exists (fun mt ->
+      mt.quality > 0.0 && mt.type_ = type_ && mt.subtype = subtype
+    ) media_types
+  in
+  accepts_exact "application" "json" && accepts_exact "text" "event-stream"
 
 (** {2 Response Content Type Selection} *)
 

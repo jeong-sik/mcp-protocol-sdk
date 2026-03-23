@@ -135,6 +135,18 @@ let parse_list_field field_name parser result =
     end
   | _ -> Error "Invalid response format"
 
+let parse_paginated_list_field field_name parser result =
+  match result with
+  | `Assoc fields ->
+    let next_cursor =
+      match List.assoc_opt "nextCursor" fields with
+      | Some (`String s) when String.trim s <> "" -> Some s
+      | _ -> None
+    in
+    Result.map (fun items -> (items, next_cursor))
+      (parse_list_field field_name parser result)
+  | _ -> Error "Invalid response format"
+
 let build_initialize_params ~has_sampling ~has_roots ~has_elicitation
     ~client_name ~client_version =
   let caps : Mcp_types.client_capabilities = {

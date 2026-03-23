@@ -26,13 +26,14 @@ type t = {
   notification_handler : notification_handler option;
   timeout_fn : timeout_fn option;
   access_token : string option;
+  headers : (string * string) list;
 }
 
 let default_timeout = 60.0
 
 (* ── construction ────────────────────────────── *)
 
-let create ~endpoint ~net ~sw ?clock ?access_token () =
+let create ~endpoint ~net ~sw ?(headers = []) ?clock ?access_token () =
   let timeout_fn = match clock with
     | Some c -> Some { run = fun d f -> Eio.Time.with_timeout_exn c d f }
     | None -> None
@@ -49,6 +50,7 @@ let create ~endpoint ~net ~sw ?clock ?access_token () =
     notification_handler = None;
     timeout_fn;
     access_token;
+    headers;
   }
 
 let on_sampling handler t = { t with sampling_handler = Some handler }
@@ -59,13 +61,15 @@ let on_notification handler t = { t with notification_handler = Some handler }
 (* ── HTTP helpers ────────────────────────────── *)
 
 let json_content_type = "application/json"
+let streamable_accept = json_content_type ^ ", " ^ Http_negotiation.sse_content_type
 
 let make_headers t =
   let h = [
     ("Content-Type", json_content_type);
-    ("Accept", json_content_type);
+    ("Accept", streamable_accept);
     ("Mcp-Protocol-Version", Version.latest);
   ] in
+  let h = t.headers @ h in
   let h = match t.access_token with
     | Some token -> ("Authorization", Printf.sprintf "Bearer %s" token) :: h
     | None -> h
@@ -73,6 +77,38 @@ let make_headers t =
   match t.session_id with
   | Some sid -> (Http_session.header_name, sid) :: h
   | None -> h
+
+let parse_sse_body raw =
+  let lines = String.split_on_char '\n' raw in
+  let data_lines =
+    List.filter_map
+      (fun line ->
+        let trimmed = String.trim line in
+        if String.length trimmed > 5 && String.sub trimmed 0 5 = "data:" then
+          Some (String.trim (String.sub trimmed 5 (String.length trimmed - 5)))
+        else None)
+      lines
+  in
+  match List.rev data_lines with
+  | [] -> None
+  | last :: _ when last = "" -> None
+  | last :: _ -> (
+      try Some (Yojson.Safe.from_string last)
+      with Yojson.Json_error _ -> None)
+
+let parse_response_body ~content_type body_str =
+  let is_sse =
+    match content_type with
+    | Some ct ->
+      let lowered = String.lowercase_ascii ct in
+      String.length lowered >= 17
+      && String.sub lowered 0 17 = "text/event-stream"
+    | None -> false
+  in
+  if is_sse then parse_sse_body body_str
+  else
+    try Some (Yojson.Safe.from_string body_str)
+    with Yojson.Json_error _ -> None
 
 let post_json t body_json =
   let body_str = Yojson.Safe.to_string body_json in
@@ -93,7 +129,7 @@ let post_json t body_json =
     Eio.Buf_read.of_flow ~max_size:(10 * 1024 * 1024) resp_body
     |> Eio.Buf_read.take_all
   in
-  (status, body_str)
+  (status, resp_headers, body_str)
 
 (* ── notification ────────────────────────────── *)
 
@@ -104,8 +140,8 @@ let send_notification t ~method_ ?params () =
   | exception exn ->
     Error (Printf.sprintf "HTTP notification failed: %s"
       (Printexc.to_string exn))
-  | (`OK, _) | (`Accepted, _) -> Ok ()
-  | (status, body) ->
+  | (`OK, _, _) | (`Accepted, _, _) -> Ok ()
+  | (status, _, body) ->
     Error (Printf.sprintf "HTTP %d: %s"
       (Http.Status.to_int status) body)
 
@@ -122,15 +158,16 @@ let do_request t ~method_ ?params () =
   match post_json t json with
   | exception exn ->
     Error (Printf.sprintf "HTTP request failed: %s" (Printexc.to_string exn))
-  | (status, body_str) ->
+  | (status, resp_headers, body_str) ->
     if status <> `OK then
       Error (Printf.sprintf "HTTP %d: %s"
         (Http.Status.to_int status) body_str)
     else
-      match Yojson.Safe.from_string body_str with
-      | exception Yojson.Json_error msg ->
-        Error (Printf.sprintf "JSON parse error: %s" msg)
-      | json ->
+      let content_type = Http.Header.get resp_headers "content-type" in
+      match parse_response_body ~content_type body_str with
+      | None ->
+        Error "JSON parse error: empty or unparseable response body"
+      | Some json ->
         match Jsonrpc.message_of_yojson json with
         | Error e -> Error (Printf.sprintf "JSON-RPC parse error: %s" e)
         | Ok (Jsonrpc.Response resp) -> Ok resp.result
@@ -160,6 +197,19 @@ let send_request t ~method_ ?params ?(timeout = default_timeout) () =
       | _exn -> ());
       Error (Printf.sprintf "Request timed out after %.1fs" timeout)
     end
+
+let collect_pages fetch_page =
+  let rec loop cursor acc =
+    match fetch_page cursor with
+    | Error _ as err -> err
+    | Ok (page, next_cursor) ->
+      let acc = acc @ page in
+      begin match next_cursor with
+      | Some value -> loop (Some value) acc
+      | None -> Ok acc
+      end
+  in
+  loop None []
 
 (* ── lifecycle ───────────────────────────────── *)
 
@@ -193,7 +243,17 @@ let list_tools ?cursor t =
   in
   match send_request t ~method_:Notifications.tools_list ?params () with
   | Error e -> Error e
-  | Ok result -> Mcp_protocol_eio.Handler.parse_list_field "tools" Mcp_types.tool_of_yojson result
+  | Ok result ->
+    Result.map fst
+      (Mcp_protocol_eio.Handler.parse_paginated_list_field "tools" Mcp_types.tool_of_yojson result)
+
+let list_tools_all t =
+  collect_pages (fun cursor ->
+    let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
+    match send_request t ~method_:Notifications.tools_list ?params () with
+    | Error e -> Error e
+    | Ok result ->
+      Mcp_protocol_eio.Handler.parse_paginated_list_field "tools" Mcp_types.tool_of_yojson result)
 
 let call_tool t ~name ?arguments () =
   let params_fields = [("name", `String name)] in
@@ -216,7 +276,16 @@ let list_resources ?cursor t =
   match send_request t ~method_:Notifications.resources_list ?params () with
   | Error e -> Error e
   | Ok result ->
-    Mcp_protocol_eio.Handler.parse_list_field "resources" Mcp_types.resource_of_yojson result
+    Result.map fst
+      (Mcp_protocol_eio.Handler.parse_paginated_list_field "resources" Mcp_types.resource_of_yojson result)
+
+let list_resources_all t =
+  collect_pages (fun cursor ->
+    let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
+    match send_request t ~method_:Notifications.resources_list ?params () with
+    | Error e -> Error e
+    | Ok result ->
+      Mcp_protocol_eio.Handler.parse_paginated_list_field "resources" Mcp_types.resource_of_yojson result)
 
 let read_resource t ~uri =
   let params = `Assoc [("uri", `String uri)] in
@@ -257,7 +326,16 @@ let list_prompts ?cursor t =
   match send_request t ~method_:Notifications.prompts_list ?params () with
   | Error e -> Error e
   | Ok result ->
-    Mcp_protocol_eio.Handler.parse_list_field "prompts" Mcp_types.prompt_of_yojson result
+    Result.map fst
+      (Mcp_protocol_eio.Handler.parse_paginated_list_field "prompts" Mcp_types.prompt_of_yojson result)
+
+let list_prompts_all t =
+  collect_pages (fun cursor ->
+    let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
+    match send_request t ~method_:Notifications.prompts_list ?params () with
+    | Error e -> Error e
+    | Ok result ->
+      Mcp_protocol_eio.Handler.parse_paginated_list_field "prompts" Mcp_types.prompt_of_yojson result)
 
 let get_prompt t ~name ?arguments () =
   let params_fields = [("name", `String name)] in

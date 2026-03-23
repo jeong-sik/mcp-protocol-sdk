@@ -93,10 +93,14 @@ let test_accepts_json () =
     false (Http_negotiation.accepts_json "text/event-stream")
 
 let test_accepts_streamable_mcp () =
-  Alcotest.(check bool) "json"
-    true (Http_negotiation.accepts_streamable_mcp "application/json");
-  Alcotest.(check bool) "sse"
-    true (Http_negotiation.accepts_streamable_mcp "text/event-stream");
+  Alcotest.(check bool) "json + sse"
+    true
+    (Http_negotiation.accepts_streamable_mcp
+       "application/json, text/event-stream");
+  Alcotest.(check bool) "json only"
+    false (Http_negotiation.accepts_streamable_mcp "application/json");
+  Alcotest.(check bool) "sse only"
+    false (Http_negotiation.accepts_streamable_mcp "text/event-stream");
   Alcotest.(check bool) "html only"
     false (Http_negotiation.accepts_streamable_mcp "text/html")
 
