@@ -232,7 +232,14 @@ let test_resource_templates () =
        (Option.is_some result.capabilities.resources)
    | Error e -> Alcotest.fail e);
 
-  (* templates/list via low-level request *)
+  (* templates/list via typed API *)
+  (match Client.list_resource_templates client with
+   | Ok templates ->
+     Alcotest.(check int) "one template" 1 (List.length templates);
+     Alcotest.(check string) "template name" "database" (List.hd templates).name
+   | Error e -> Alcotest.fail ("list_resource_templates: " ^ e));
+
+  (* also verify via low-level request *)
   (match Client.send_request client ~method_:"resources/templates/list" () with
    | Ok result ->
      (match result with

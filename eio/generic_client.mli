@@ -56,6 +56,8 @@ module Make (T : Mcp_protocol.Transport.S) : sig
     (Mcp_types.resource_contents list, string) result
   val subscribe_resource : t -> uri:string -> (unit, string) result
   val unsubscribe_resource : t -> uri:string -> (unit, string) result
+  val list_resource_templates : ?cursor:string -> t ->
+    (Mcp_types.resource_template list, string) result
 
   (** {2 Prompts} *)
 
