@@ -44,14 +44,14 @@ module Make (T : Mcp_protocol.Transport.S) = struct
     handler: Handler.t;
     mutable transport_ref: T.t option;
     mutable log_level: Logging.log_level;
-    mutable next_request_id: int;
+    next_request_id: int Atomic.t;
   }
 
   let create ~name ~version ?instructions () =
     { handler = Handler.create ~name ~version ?instructions ();
       transport_ref = None;
       log_level = Logging.Warning;
-      next_request_id = 1 }
+      next_request_id = Atomic.make 1 }
 
   let add_tool tool handler s =
     { s with handler = Handler.add_tool tool handler s.handler }
@@ -124,9 +124,8 @@ module Make (T : Mcp_protocol.Transport.S) = struct
       with Eio.Time.Timeout ->
         Error (Printf.sprintf "Server request timed out after %.1fs" default_timeout)
 
-  let server_send_request transport next_id_ref ?clock ~method_ ?params () =
-    let id = Jsonrpc.Int !next_id_ref in
-    next_id_ref := !next_id_ref + 1;
+  let server_send_request transport next_id ?clock ~method_ ?params () =
+    let id = Jsonrpc.Int (Atomic.fetch_and_add next_id 1) in
     let msg = Jsonrpc.make_request ~id ~method_ ?params () in
     match T.write transport msg with
     | Error e -> Error e
@@ -134,7 +133,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
 
   (* ── context builder ─────────────────────────────────── *)
 
-  let make_context transport log_level_ref next_id_ref ?clock () =
+  let make_context transport log_level_ref next_id ?clock () =
     let send_notification ~method_ ~params =
       send_notification_via_transport transport ~method_ ~params
     in
@@ -160,13 +159,13 @@ module Make (T : Mcp_protocol.Transport.S) = struct
     in
     let request_sampling params =
       let json = Sampling.create_message_params_to_yojson params in
-      match server_send_request transport next_id_ref ?clock
+      match server_send_request transport next_id ?clock
               ~method_:Notifications.sampling_create_message ~params:json () with
       | Error e -> Error e
       | Ok result -> Sampling.create_message_result_of_yojson result
     in
     let request_roots_list () =
-      match server_send_request transport next_id_ref ?clock
+      match server_send_request transport next_id ?clock
               ~method_:Notifications.roots_list () with
       | Error e -> Error e
       | Ok result ->
@@ -190,7 +189,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
     in
     let request_elicitation params =
       let json = Mcp_types.elicitation_params_to_yojson params in
-      match server_send_request transport next_id_ref ?clock
+      match server_send_request transport next_id ?clock
               ~method_:Notifications.elicitation_create ~params:json () with
       | Error e -> Error e
       | Ok result -> Mcp_types.elicitation_result_of_yojson result
@@ -203,8 +202,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
   let run s ~transport ?clock () =
     s.transport_ref <- Some transport;
     let log_level_ref = ref s.log_level in
-    let next_id_ref = ref s.next_request_id in
-    let ctx = make_context transport log_level_ref next_id_ref ?clock () in
+    let ctx = make_context transport log_level_ref s.next_request_id ?clock () in
     let rec loop () =
       match T.read transport with
       | None -> ()
@@ -227,7 +225,6 @@ module Make (T : Mcp_protocol.Transport.S) = struct
         (try T.close transport
          with _ -> ());
         s.log_level <- !log_level_ref;
-        s.next_request_id <- !next_id_ref;
         s.transport_ref <- None)
 
 end
