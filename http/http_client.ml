@@ -64,6 +64,7 @@ let make_headers t =
   let h = [
     ("Content-Type", json_content_type);
     ("Accept", json_content_type);
+    ("Mcp-Protocol-Version", Version.latest);
   ] in
   let h = match t.access_token with
     | Some token -> ("Authorization", Printf.sprintf "Bearer %s" token) :: h

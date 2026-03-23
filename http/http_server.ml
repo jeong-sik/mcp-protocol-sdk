@@ -92,7 +92,9 @@ let respond_json ~status body =
     ~status ~body:json_str ()
 
 let respond_json_with_session session ~status body =
-  let headers = ("Content-Type", json_content_type) :: cors_headers in
+  let headers = ("Content-Type", json_content_type)
+    :: ("Mcp-Protocol-Version", Version.latest)
+    :: cors_headers in
   let headers = match Http_session.session_id session with
     | Some sid -> (Http_session.header_name, sid) :: headers
     | None -> headers
@@ -329,13 +331,26 @@ let callback s ?(prefix="/mcp") _conn request body =
     Cohttp_eio.Server.respond_string
       ~status:`Not_found ~body:"Not found" ()
   else
-    (* MCP 2025-11-25: DNS rebinding protection.
-       Validate Origin header before processing any MCP request. *)
+    (* MCP 2025-11-25: DNS rebinding protection. *)
     match validate_origin request with
     | Error msg ->
       respond_json ~status:`Forbidden
         (`Assoc ["error", `String msg])
     | Ok () ->
+    (* MCP 2025-11-25: Mcp-Protocol-Version header validation for Streamable HTTP.
+       The header is required on POST (except initialize) and GET requests. *)
+    let version_ok =
+      match Http.Header.get (Http.Request.headers request) "mcp-protocol-version" with
+      | None -> true  (* absent = allowed for backward compat and initialize *)
+      | Some v -> Version.is_supported v
+    in
+    if not version_ok then
+      Cohttp_eio.Server.respond_string
+        ~status:`Not_acceptable
+        ~headers:(Http.Header.of_list cors_headers)
+        ~body:(Printf.sprintf {|{"error":"Unsupported MCP protocol version. Supported: %s"}|}
+          Version.latest) ()
+    else
     match meth with
     | `POST ->
       (* H5 fix: Parse JSON once here, pass the parsed result to handle_post
