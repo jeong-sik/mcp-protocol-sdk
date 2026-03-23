@@ -50,9 +50,39 @@ let sse_content_type = "text/event-stream"
 let cors_headers = [
   ("Access-Control-Allow-Origin", "*");
   ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  ("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id");
+  ("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version");
   ("Access-Control-Expose-Headers", "Mcp-Session-Id");
 ]
+
+(* ── DNS rebinding protection (MCP 2025-11-25) ── *)
+
+(** Localhost origins considered safe.
+    Per spec: servers binding to localhost MUST validate Origin header
+    to prevent DNS rebinding attacks. *)
+let localhost_origins = [
+  "http://localhost"; "https://localhost";
+  "http://127.0.0.1"; "https://127.0.0.1";
+  "http://[::1]"; "https://[::1]";
+]
+
+let is_localhost_origin origin =
+  List.exists (fun prefix ->
+    origin = prefix ||
+    (String.length origin > String.length prefix &&
+     origin.[String.length prefix] = ':' &&
+     String.sub origin 0 (String.length prefix) = prefix)
+  ) localhost_origins
+
+(** Validate Origin header. Returns [Ok ()] if safe, [Error msg] if blocked.
+    - No Origin: allowed (same-origin requests omit it)
+    - Localhost origin (with any port): allowed
+    - Non-localhost origin: blocked *)
+let validate_origin request =
+  match Http.Header.get (Http.Request.headers request) "origin" with
+  | None -> Ok ()
+  | Some origin ->
+    if is_localhost_origin origin then Ok ()
+    else Error (Printf.sprintf "Origin %S is not a localhost origin" origin)
 
 let respond_json ~status body =
   let json_str = Yojson.Safe.to_string body in
@@ -299,6 +329,13 @@ let callback s ?(prefix="/mcp") _conn request body =
     Cohttp_eio.Server.respond_string
       ~status:`Not_found ~body:"Not found" ()
   else
+    (* MCP 2025-11-25: DNS rebinding protection.
+       Validate Origin header before processing any MCP request. *)
+    match validate_origin request with
+    | Error msg ->
+      respond_json ~status:`Forbidden
+        (`Assoc ["error", `String msg])
+    | Ok () ->
     match meth with
     | `POST ->
       (* H5 fix: Parse JSON once here, pass the parsed result to handle_post
