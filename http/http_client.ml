@@ -79,17 +79,42 @@ let make_headers t =
   | None -> h
 
 let parse_sse_body raw =
-  let lines = String.split_on_char '\n' raw in
-  let data_lines =
-    List.filter_map
-      (fun line ->
-        let trimmed = String.trim line in
-        if String.length trimmed > 5 && String.sub trimmed 0 5 = "data:" then
-          Some (String.trim (String.sub trimmed 5 (String.length trimmed - 5)))
-        else None)
-      lines
+  let trim_cr line =
+    let len = String.length line in
+    if len > 0 && Char.equal line.[len - 1] '\r' then
+      String.sub line 0 (len - 1)
+    else
+      line
   in
-  match List.rev data_lines with
+  let data_of_line line =
+    if String.length line >= 5 && String.sub line 0 5 = "data:" then
+      let payload = String.sub line 5 (String.length line - 5) in
+      if String.length payload > 0 && Char.equal payload.[0] ' ' then
+        Some (String.sub payload 1 (String.length payload - 1))
+      else
+        Some payload
+    else
+      None
+  in
+  let flush_event current acc =
+    match current with
+    | [] -> acc
+    | _ -> String.concat "\n" (List.rev current) :: acc
+  in
+  let events =
+    List.fold_left
+      (fun (current, acc) raw_line ->
+        let line = trim_cr raw_line in
+        if String.equal line "" then
+          ([], flush_event current acc)
+        else
+          match data_of_line line with
+          | Some payload -> (payload :: current, acc)
+          | None -> (current, acc))
+      ([], []) (String.split_on_char '\n' raw)
+    |> fun (current, acc) -> List.rev (flush_event current acc)
+  in
+  match List.rev events with
   | [] -> None
   | last :: _ when last = "" -> None
   | last :: _ -> (
@@ -199,17 +224,21 @@ let send_request t ~method_ ?params ?(timeout = default_timeout) () =
     end
 
 let collect_pages fetch_page =
-  let rec loop cursor acc =
+  let module Cursor_set = Set.Make (String) in
+  let rec loop seen cursor acc_rev =
     match fetch_page cursor with
     | Error _ as err -> err
     | Ok (page, next_cursor) ->
-      let acc = acc @ page in
       begin match next_cursor with
-      | Some value -> loop (Some value) acc
-      | None -> Ok acc
+      | Some value when Cursor_set.mem value seen ->
+        Error (Printf.sprintf "Pagination cursor loop detected: %s" value)
+      | Some value ->
+        loop (Cursor_set.add value seen) (Some value)
+          (List.rev_append page acc_rev)
+      | None -> Ok (List.rev_append page acc_rev |> List.rev)
       end
   in
-  loop None []
+  loop Cursor_set.empty None []
 
 (* ── lifecycle ───────────────────────────────── *)
 

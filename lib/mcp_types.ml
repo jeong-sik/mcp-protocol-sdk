@@ -154,7 +154,8 @@ let tool_of_yojson = function
           | Some schema -> schema
           | None -> `Assoc [("type", `String "object")]
         in
-        ("inputSchema", fallback_schema) :: fields
+        ("inputSchema", fallback_schema)
+        :: List.filter (fun (key, _) -> key <> "input_schema") fields
     in
     tool_of_yojson_generated (`Assoc normalized_fields)
   | json ->
