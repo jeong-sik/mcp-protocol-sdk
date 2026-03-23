@@ -939,6 +939,114 @@ let test_elicitation_params_url_mode () =
     Alcotest.(check (option string)) "url" (Some "https://example.com/auth") decoded.url
   | Error e -> Alcotest.fail e
 
+(* --- tool with outputSchema roundtrip --- *)
+
+let test_tool_output_schema_roundtrip () =
+  let schema = `Assoc [
+    ("type", `String "object");
+    ("properties", `Assoc [
+      ("result", `Assoc [("type", `String "string")])
+    ])
+  ] in
+  let tool = Mcp_types.make_tool ~name:"calc" ~description:"Calculate"
+    ~output_schema:schema () in
+  Alcotest.(check bool) "output_schema set" true (Option.is_some tool.output_schema);
+  let j = Mcp_types.tool_to_yojson tool in
+  (* Verify outputSchema key in JSON *)
+  (match j with
+   | `Assoc fields ->
+     Alcotest.(check bool) "outputSchema key in JSON" true
+       (List.mem_assoc "outputSchema" fields)
+   | _ -> Alcotest.fail "expected object");
+  match Mcp_types.tool_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check bool) "has output_schema" true
+      (Option.is_some decoded.output_schema);
+    Alcotest.(check json) "output_schema value" schema
+      (Option.get decoded.output_schema)
+  | Error e -> Alcotest.fail e
+
+(* --- tool with execution.taskSupport roundtrip --- *)
+
+let test_tool_execution_roundtrip () =
+  let check_variant variant expected_str =
+    let exec : Mcp_types.tool_execution = { task_support = variant } in
+    let tool = Mcp_types.make_tool ~name:"task_tool"
+      ~description:"Tool with task support" ~execution:exec () in
+    let j = Mcp_types.tool_to_yojson tool in
+    (* Verify execution.taskSupport in JSON *)
+    (match j with
+     | `Assoc fields ->
+       (match List.assoc_opt "execution" fields with
+        | Some (`Assoc exec_fields) ->
+          (match List.assoc_opt "taskSupport" exec_fields with
+           | Some (`String s) ->
+             Alcotest.(check string) ("taskSupport " ^ expected_str) expected_str s
+           | _ -> Alcotest.fail "missing taskSupport field")
+        | _ -> Alcotest.fail "missing execution field")
+     | _ -> Alcotest.fail "expected object");
+    match Mcp_types.tool_of_yojson j with
+    | Ok decoded ->
+      Alcotest.(check bool) "execution present" true
+        (Option.is_some decoded.execution);
+      let exec_decoded = Option.get decoded.execution in
+      let got = Mcp_types.task_execution_support_to_yojson exec_decoded.task_support in
+      Alcotest.(check json) ("roundtrip " ^ expected_str)
+        (`String expected_str) got
+    | Error e -> Alcotest.fail e
+  in
+  check_variant Mcp_types.Task_required "required";
+  check_variant Mcp_types.Task_optional "optional";
+  check_variant Mcp_types.Task_forbidden "forbidden"
+
+(* --- server_capabilities full roundtrip --- *)
+
+let test_capabilities_full_roundtrip () =
+  let caps : Mcp_types.server_capabilities = {
+    tools = Some { list_changed = Some true };
+    resources = Some { subscribe = Some true; list_changed = Some false };
+    prompts = Some { list_changed = Some true };
+    logging = Some ();
+    completions = Some ();
+    experimental = Some (`Assoc [("custom", `Bool true)]);
+  } in
+  let j = Mcp_types.server_capabilities_to_yojson caps in
+  match Mcp_types.server_capabilities_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check bool) "tools present" true (Option.is_some decoded.tools);
+    Alcotest.(check bool) "resources present" true (Option.is_some decoded.resources);
+    Alcotest.(check bool) "prompts present" true (Option.is_some decoded.prompts);
+    Alcotest.(check bool) "logging present" true (Option.is_some decoded.logging);
+    Alcotest.(check bool) "completions present" true (Option.is_some decoded.completions);
+    Alcotest.(check bool) "experimental present" true (Option.is_some decoded.experimental);
+    (* Check sub-fields *)
+    let resources = Option.get decoded.resources in
+    Alcotest.(check (option bool)) "subscribe" (Some true) resources.subscribe;
+    Alcotest.(check (option bool)) "resources listChanged" (Some false) resources.list_changed;
+    let prompts = Option.get decoded.prompts in
+    Alcotest.(check (option bool)) "prompts listChanged" (Some true) prompts.list_changed
+  | Error e -> Alcotest.fail e
+
+(* --- client_capabilities full roundtrip --- *)
+
+let test_client_capabilities_full_roundtrip () =
+  let caps : Mcp_types.client_capabilities = {
+    roots = Some { list_changed = Some true };
+    sampling = Some ();
+    elicitation = Some ();
+    experimental = Some (`Assoc [("beta", `String "feature")]);
+  } in
+  let j = Mcp_types.client_capabilities_to_yojson caps in
+  match Mcp_types.client_capabilities_of_yojson j with
+  | Ok decoded ->
+    Alcotest.(check bool) "roots present" true (Option.is_some decoded.roots);
+    Alcotest.(check bool) "sampling present" true (Option.is_some decoded.sampling);
+    Alcotest.(check bool) "elicitation present" true (Option.is_some decoded.elicitation);
+    Alcotest.(check bool) "experimental present" true (Option.is_some decoded.experimental);
+    let roots = Option.get decoded.roots in
+    Alcotest.(check (option bool)) "roots listChanged" (Some true) roots.list_changed
+  | Error e -> Alcotest.fail e
+
 (* --- Suite --- *)
 
 let () =
@@ -951,6 +1059,8 @@ let () =
       Alcotest.test_case "round-trip" `Quick test_tool_roundtrip;
       Alcotest.test_case "no description" `Quick test_tool_no_description;
       Alcotest.test_case "tool_def alias" `Quick test_tool_def_alias;
+      Alcotest.test_case "output_schema roundtrip" `Quick test_tool_output_schema_roundtrip;
+      Alcotest.test_case "execution roundtrip" `Quick test_tool_execution_roundtrip;
     ];
     "resource", [
       Alcotest.test_case "round-trip" `Quick test_resource_roundtrip;
@@ -963,6 +1073,10 @@ let () =
     ];
     "capabilities", [
       Alcotest.test_case "round-trip" `Quick test_capabilities_roundtrip;
+      Alcotest.test_case "full roundtrip" `Quick test_capabilities_full_roundtrip;
+    ];
+    "client_capabilities", [
+      Alcotest.test_case "full roundtrip" `Quick test_client_capabilities_full_roundtrip;
     ];
     "initialize", [
       Alcotest.test_case "params round-trip" `Quick test_initialize_params_roundtrip;
