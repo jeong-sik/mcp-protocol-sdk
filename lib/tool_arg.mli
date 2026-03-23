@@ -5,7 +5,7 @@
         let open Tool_arg in
         let* text = required args "text" string in
         let count = optional args "count" int ~default:1 in
-        Ok (tool_result_of_text (String.concat "" (List.init count (fun _ -> text))))
+        Ok (Mcp_types.tool_result_of_text (String.concat "" (List.init count (fun _ -> text))))
     ]}
 *)
 
@@ -26,7 +26,8 @@ val list_of : 'a extractor -> 'a list extractor
 (** Extract a required field from tool args. Error if missing. *)
 val required : Yojson.Safe.t option -> string -> 'a extractor -> ('a, string) result
 
-(** Extract an optional field, returning [default] if missing. *)
+(** Extract an optional field, returning [default] if the field is missing
+    or fails to parse. Use [required] if parse failures should propagate. *)
 val optional : Yojson.Safe.t option -> string -> 'a extractor -> default:'a -> 'a
 
 (** Extract an optional field as [Some value] or [None]. *)
