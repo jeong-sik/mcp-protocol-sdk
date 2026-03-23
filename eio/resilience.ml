@@ -193,13 +193,14 @@ let with_retry_eio
           (match circuit_breaker with Some cb -> circuit_record_success cb | None -> ());
           Ok v
       | Error e ->
-          (match classify e with
+          let action = classify e in
+          (match action with
           | Fail msg ->
               (match circuit_breaker with Some cb -> circuit_record_failure cb | None -> ());
               Error msg
           | Retry ->
               (match circuit_breaker with Some cb -> circuit_record_failure cb | None -> ());
-              attempt (n + 1) (Some (match classify e with Fail m -> m | Retry -> "Retryable error")))
+              attempt (n + 1) (Some (match action with Fail m -> m | Retry -> "Retryable error")))
       | CircuitOpen -> CircuitOpen
       | TimedOut -> TimedOut
     end

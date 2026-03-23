@@ -174,15 +174,15 @@ module Make (T : Mcp_protocol.Transport.S) = struct
         | `Assoc fields ->
           begin match List.assoc_opt "roots" fields with
           | Some (`List items) ->
-            let roots = List.fold_left (fun acc j ->
+            List.fold_left (fun acc j ->
               match acc with
               | Error _ -> acc
               | Ok lst ->
                 match Mcp_types.root_of_yojson j with
-                | Ok r -> Ok (lst @ [r])
+                | Ok r -> Ok (r :: lst)
                 | Error e -> Error (Printf.sprintf "Failed to parse root: %s" e)
-            ) (Ok []) items in
-            roots
+            ) (Ok []) items
+            |> Result.map List.rev
           | _ -> Error "Missing 'roots' in response"
           end
         | _ -> Error "Invalid roots/list response"
@@ -224,9 +224,10 @@ module Make (T : Mcp_protocol.Transport.S) = struct
     in
     Fun.protect (fun () -> loop ())
       ~finally:(fun () ->
+        (try T.close transport
+         with _ -> ());
         s.log_level <- !log_level_ref;
         s.next_request_id <- !next_id_ref;
-        s.transport_ref <- None;
-        T.close transport)
+        s.transport_ref <- None)
 
 end
