@@ -20,7 +20,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
 
   type t = {
     transport: T.t;
-    mutable next_id: int;
+    next_id: int Atomic.t;
     sampling_handler: sampling_handler option;
     roots_handler: roots_handler option;
     elicitation_handler: elicitation_handler option;
@@ -37,7 +37,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
     in
     {
       transport;
-      next_id = 1;
+      next_id = Atomic.make 1;
       sampling_handler = None;
       roots_handler = None;
       elicitation_handler = None;
@@ -163,16 +163,55 @@ module Make (T : Mcp_protocol.Transport.S) = struct
           dispatch_server_request t req;
           loop ()
         | Jsonrpc.Notification notif ->
-          (match t.notification_handler with
-           | Some handler ->
-             (try handler notif.method_ notif.params
-              with
-              | Out_of_memory | Stack_overflow as exn -> raise exn
-              | exn ->
-                Printf.eprintf "Client: notification handler raised: %s\n%!"
-                  (Printexc.to_string exn))
-           | None -> ());
-          loop ()
+          if notif.method_ = Notifications.cancelled then begin
+            (* Check if cancellation targets our in-flight request *)
+            let matches = match notif.params with
+              | Some (`Assoc fields) ->
+                begin match List.assoc_opt "requestId" fields with
+                | Some id_json ->
+                  (match Jsonrpc.id_of_yojson id_json with
+                   | Ok id -> id = expected_id
+                   | Error _ -> false)
+                | None -> false
+                end
+              | _ -> false
+            in
+            if matches then
+              let reason = match notif.params with
+                | Some (`Assoc fields) ->
+                  (match List.assoc_opt "reason" fields with
+                   | Some (`String r) -> Some r
+                   | _ -> None)
+                | _ -> None
+              in
+              Error (Printf.sprintf "Request cancelled%s"
+                (match reason with Some r -> ": " ^ r | None -> ""))
+            else begin
+              (* Cancellation for a different request; pass to handler and continue *)
+              (match t.notification_handler with
+               | Some handler ->
+                 (try handler notif.method_ notif.params
+                  with
+                  | Out_of_memory | Stack_overflow as exn -> raise exn
+                  | exn ->
+                    Printf.eprintf "Client: notification handler raised: %s\n%!"
+                      (Printexc.to_string exn))
+               | None -> ());
+              loop ()
+            end
+          end else begin
+            (* Normal notification handling *)
+            (match t.notification_handler with
+             | Some handler ->
+               (try handler notif.method_ notif.params
+                with
+                | Out_of_memory | Stack_overflow as exn -> raise exn
+                | exn ->
+                  Printf.eprintf "Client: notification handler raised: %s\n%!"
+                    (Printexc.to_string exn))
+             | None -> ());
+            loop ()
+          end
         | _ -> loop ()
         end
     in
@@ -183,8 +222,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
     T.write t.transport msg
 
   let send_request t ~method_ ?params ?(timeout = default_timeout) () =
-    let id = Jsonrpc.Int t.next_id in
-    t.next_id <- t.next_id + 1;
+    let id = Jsonrpc.Int (Atomic.fetch_and_add t.next_id 1) in
     let msg = Jsonrpc.make_request ~id ~method_ ?params () in
     match T.write t.transport msg with
     | Error e -> Error e

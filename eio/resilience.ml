@@ -221,5 +221,6 @@ let with_timeout_eio ~clock ~timeout_ms f =
   in
   match result with
   | Ok res -> Ok res
-  | Error _ -> Error "Timeout"
-  | _ -> Error "Unknown error"
+  | Error _ -> TimedOut
+  | CircuitOpen -> CircuitOpen
+  | TimedOut -> TimedOut

@@ -8,7 +8,7 @@ type t = {
   handler : Mcp_protocol_eio.Handler.t;
   session : Http_session.t;
   broadcaster : Sse.Broadcaster.t;
-  mutable log_level : Logging.log_level;
+  log_level : Logging.log_level Atomic.t;
   mutable sleep : (float -> unit) option;
   auth : Auth_middleware.config option;
 }
@@ -17,7 +17,7 @@ let create ~name ~version ?instructions ?auth () = {
   handler = Mcp_protocol_eio.Handler.create ~name ~version ?instructions ();
   session = Http_session.create ();
   broadcaster = Sse.Broadcaster.create ();
-  log_level = Logging.Warning;
+  log_level = Atomic.make Logging.Warning;
   sleep = None;
   auth;
 }
@@ -56,22 +56,15 @@ let cors_headers = [
 
 (* ── DNS rebinding protection (MCP 2025-11-25) ── *)
 
-(** Localhost origins considered safe.
+(** Check if an origin is a localhost origin using URI parsing.
     Per spec: servers binding to localhost MUST validate Origin header
     to prevent DNS rebinding attacks. *)
-let localhost_origins = [
-  "http://localhost"; "https://localhost";
-  "http://127.0.0.1"; "https://127.0.0.1";
-  "http://[::1]"; "https://[::1]";
-]
-
 let is_localhost_origin origin =
-  List.exists (fun prefix ->
-    origin = prefix ||
-    (String.length origin > String.length prefix &&
-     origin.[String.length prefix] = ':' &&
-     String.sub origin 0 (String.length prefix) = prefix)
-  ) localhost_origins
+  let uri = Uri.of_string origin in
+  match Uri.scheme uri, Uri.host uri, Uri.userinfo uri with
+  | Some ("http" | "https"), Some h, None ->
+    List.mem h ["localhost"; "127.0.0.1"; "::1"; "[::1]"]
+  | _ -> false
 
 (** Validate Origin header. Returns [Ok ()] if safe, [Error msg] if blocked.
     - No Origin: allowed (same-origin requests omit it)
@@ -144,7 +137,7 @@ let make_context s : Mcp_protocol_eio.Handler.context =
     Ok ()
   in
   let send_log level message =
-    if Logging.should_log ~min_level:s.log_level ~msg_level:level then
+    if Logging.should_log ~min_level:(Atomic.get s.log_level) ~msg_level:level then
       let msg = Logging.{ level; logger = None; data = `String message } in
       send_notification
         ~method_:Notifications.logging_message
@@ -203,10 +196,10 @@ let dispatch_jsonrpc s json is_init : Cohttp_eio.Server.response =
       (Jsonrpc.message_to_yojson err)
   | Ok parsed_msg ->
     let ctx = make_context s in
-    let log_level_ref = ref s.log_level in
+    let log_level_ref = ref (Atomic.get s.log_level) in
     let response = Mcp_protocol_eio.Handler.dispatch
       s.handler ctx log_level_ref parsed_msg in
-    s.log_level <- !log_level_ref;
+    Atomic.set s.log_level !log_level_ref;
     if is_init then begin
       (match Http_session.state s.session with
        | Http_session.Uninitialized ->

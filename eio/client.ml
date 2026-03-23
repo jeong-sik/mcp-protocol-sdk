@@ -15,7 +15,7 @@ type timeout_fn = { run : 'a. float -> (unit -> 'a) -> 'a }
 
 type t = {
   transport: Stdio_transport.t;
-  mutable next_id: int;
+  next_id: int Atomic.t;
   sampling_handler: sampling_handler option;
   roots_handler: roots_handler option;
   elicitation_handler: elicitation_handler option;
@@ -32,7 +32,7 @@ let create ~stdin ~stdout ?clock () =
   in
   {
     transport = Stdio_transport.create ~stdin ~stdout ();
-    next_id = 1;
+    next_id = Atomic.make 1;
     sampling_handler = None;
     roots_handler = None;
     elicitation_handler = None;
@@ -218,8 +218,7 @@ let send_notification t ~method_ ?params () =
   Stdio_transport.write t.transport msg
 
 let send_request t ~method_ ?params ?(timeout = default_timeout) () =
-  let id = Jsonrpc.Int t.next_id in
-  t.next_id <- t.next_id + 1;
+  let id = Jsonrpc.Int (Atomic.fetch_and_add t.next_id 1) in
   let msg = Jsonrpc.make_request ~id ~method_ ?params () in
   match Stdio_transport.write t.transport msg with
   | Error e -> Error e

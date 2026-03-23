@@ -18,7 +18,7 @@ type t = {
   endpoint : Uri.t;
   client : Cohttp_eio.Client.t;
   sw : Eio.Switch.t;
-  mutable next_id : int;
+  next_id : int Atomic.t;
   mutable session_id : string option;
   sampling_handler : sampling_handler option;
   roots_handler : roots_handler option;
@@ -41,7 +41,7 @@ let create ~endpoint ~net ~sw ?clock ?access_token () =
     endpoint = Uri.of_string endpoint;
     client = Tls_helpers.make_client net;
     sw;
-    next_id = 1;
+    next_id = Atomic.make 1;
     session_id = None;
     sampling_handler = None;
     roots_handler = None;
@@ -115,8 +115,7 @@ let do_request t ~method_ ?params () =
   if method_ <> Notifications.initialize && t.session_id = None then
     Error "Not initialized: call initialize first"
   else
-  let id = Jsonrpc.Int t.next_id in
-  t.next_id <- t.next_id + 1;
+  let id = Jsonrpc.Int (Atomic.fetch_and_add t.next_id 1) in
   let msg = Jsonrpc.make_request ~id ~method_ ?params () in
   let json = Jsonrpc.message_to_yojson msg in
   match post_json t json with
@@ -142,7 +141,7 @@ let send_request t ~method_ ?params ?(timeout = default_timeout) () =
   | None -> do_request t ~method_ ?params ()
   | Some tf ->
     (* Capture the request ID before do_request increments next_id *)
-    let request_id = Jsonrpc.Int t.next_id in
+    let request_id = Jsonrpc.Int (Atomic.get t.next_id) in
     begin try
       tf.run timeout (fun () -> do_request t ~method_ ?params ())
     with Eio.Time.Timeout ->
