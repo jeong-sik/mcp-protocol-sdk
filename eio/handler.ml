@@ -5,6 +5,7 @@
 open Mcp_protocol
 
 module StringSet = Set.Make(String)
+module StringMap = Map.Make(String)
 
 (* ── context ─────────────────────────────────────────── *)
 
@@ -56,10 +57,10 @@ type t = {
   name: string;
   version: string;
   instructions: string option;
-  tools: registered_tool list;
-  resources: registered_resource list;
-  resource_templates: registered_resource_template list;
-  prompts: registered_prompt list;
+  tools: registered_tool StringMap.t;
+  resources: registered_resource StringMap.t;
+  resource_templates: registered_resource_template StringMap.t;
+  prompts: registered_prompt StringMap.t;
   completion_handler: completion_handler option;
   task_handlers: task_handlers option;
   subscribed_uris: StringSet.t Atomic.t;
@@ -67,7 +68,8 @@ type t = {
 
 let create ~name ~version ?instructions () =
   { name; version; instructions;
-    tools = []; resources = []; resource_templates = []; prompts = [];
+    tools = StringMap.empty; resources = StringMap.empty;
+    resource_templates = StringMap.empty; prompts = StringMap.empty;
     completion_handler = None;
     task_handlers = None;
     subscribed_uris = Atomic.make StringSet.empty }
@@ -76,20 +78,19 @@ let create ~name ~version ?instructions () =
     Previously, registering two tools with the same name would silently
     shadow the second one (List.find_opt returns the first match). *)
 let add_tool (tool : Mcp_types.tool) handler s =
-  begin if List.exists (fun rt -> rt.tool.Mcp_types.name = tool.Mcp_types.name) s.tools then
+  begin if StringMap.mem tool.Mcp_types.name s.tools then
     Printf.eprintf "[mcp-protocol] Warning: duplicate tool name '%s', replacing previous registration\n%!" tool.Mcp_types.name
   end;
-  let tools = List.filter (fun rt -> rt.tool.Mcp_types.name <> tool.Mcp_types.name) s.tools in
-  { s with tools = tools @ [{ tool; handler }] }
+  { s with tools = StringMap.add tool.Mcp_types.name { tool; handler } s.tools }
 
-let add_resource resource handler s =
-  { s with resources = s.resources @ [{ resource; handler }] }
+let add_resource (resource : Mcp_types.resource) handler s =
+  { s with resources = StringMap.add resource.Mcp_types.uri { resource; handler } s.resources }
 
-let add_resource_template template handler s =
-  { s with resource_templates = s.resource_templates @ [{ template; handler }] }
+let add_resource_template (template : Mcp_types.resource_template) handler s =
+  { s with resource_templates = StringMap.add template.Mcp_types.uri_template { template; handler } s.resource_templates }
 
-let add_prompt prompt handler s =
-  { s with prompts = s.prompts @ [{ prompt; handler }] }
+let add_prompt (prompt : Mcp_types.prompt) handler s =
+  { s with prompts = StringMap.add prompt.Mcp_types.name { prompt; handler } s.prompts }
 
 let add_completion_handler handler s =
   { s with completion_handler = Some handler }
@@ -153,25 +154,25 @@ let build_initialize_params ~has_sampling ~has_roots ~has_elicitation
 let name s = s.name
 let version s = s.version
 let instructions s = s.instructions
-let tools s = List.map (fun rt -> rt.tool) s.tools
-let resources s = List.map (fun rr -> rr.resource) s.resources
-let resource_templates s = List.map (fun rt -> rt.template) s.resource_templates
-let prompts s = List.map (fun rp -> rp.prompt) s.prompts
+let tools s = StringMap.fold (fun _ rt acc -> rt.tool :: acc) s.tools [] |> List.rev
+let resources s = StringMap.fold (fun _ rr acc -> rr.resource :: acc) s.resources [] |> List.rev
+let resource_templates s = StringMap.fold (fun _ rt acc -> rt.template :: acc) s.resource_templates [] |> List.rev
+let prompts s = StringMap.fold (fun _ rp acc -> rp.prompt :: acc) s.prompts [] |> List.rev
 let subscribed_uris s = StringSet.elements (Atomic.get s.subscribed_uris)
 
 (* ── capabilities ─────────────────────────────────────── *)
 
 let server_capabilities s =
   let tools_cap : Mcp_types.tools_capability option =
-    if s.tools = [] then None
+    if StringMap.is_empty s.tools then None
     else Some { list_changed = Some false }
   in
   let resources_cap : Mcp_types.resources_capability option =
-    if s.resources = [] && s.resource_templates = [] then None
+    if StringMap.is_empty s.resources && StringMap.is_empty s.resource_templates then None
     else Some { subscribe = Some true; list_changed = Some false }
   in
   let prompts_cap : Mcp_types.prompts_capability option =
-    if s.prompts = [] then None
+    if StringMap.is_empty s.prompts then None
     else Some { list_changed = Some false }
   in
   let logging_cap = Some () in
@@ -238,7 +239,7 @@ let handle_ping id =
   Jsonrpc.make_response ~id ~result:(`Assoc [])
 
 let handle_tools_list s id =
-  let tools_json = List.map (fun rt -> Mcp_types.tool_to_yojson rt.tool) s.tools in
+  let tools_json = StringMap.fold (fun _ rt acc -> Mcp_types.tool_to_yojson rt.tool :: acc) s.tools [] |> List.rev in
   Jsonrpc.make_response ~id ~result:(`Assoc [("tools", `List tools_json)])
 
 let handle_tools_call s ctx id params =
@@ -254,9 +255,7 @@ let handle_tools_call s ctx id params =
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
         ~message:"Missing 'name' in tools/call params" ()
     | Some tool_name ->
-      let handler_opt =
-        List.find_opt (fun rt -> rt.tool.Mcp_types.name = tool_name) s.tools
-      in
+      let handler_opt = StringMap.find_opt tool_name s.tools in
       begin match handler_opt with
       | None ->
         Jsonrpc.make_error ~id ~code:Error_codes.tool_execution_error
@@ -278,7 +277,7 @@ let handle_tools_call s ctx id params =
 
 let handle_resources_list s id =
   let resources_json =
-    List.map (fun rr -> Mcp_types.resource_to_yojson rr.resource) s.resources
+    StringMap.fold (fun _ rr acc -> Mcp_types.resource_to_yojson rr.resource :: acc) s.resources [] |> List.rev
   in
   Jsonrpc.make_response ~id ~result:(`Assoc [("resources", `List resources_json)])
 
@@ -294,9 +293,7 @@ let handle_resources_read s ctx id params =
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
         ~message:"Missing 'uri' in resources/read params" ()
     | Some resource_uri ->
-      let handler_opt =
-        List.find_opt (fun rr -> rr.resource.Mcp_types.uri = resource_uri) s.resources
-      in
+      let handler_opt = StringMap.find_opt resource_uri s.resources in
       begin match handler_opt with
       | Some rr ->
         begin match rr.handler ctx resource_uri with
@@ -314,7 +311,8 @@ let handle_resources_read s ctx id params =
         (* Fall back to resource templates: find a template whose
            uri_template is a prefix match for the requested URI. *)
         let template_handler_opt =
-          List.find_opt (fun rt ->
+          StringMap.bindings s.resource_templates
+          |> List.find_opt (fun (_key, rt) ->
             (* Simple prefix match: check if the URI starts with the
                non-variable prefix of the template. A full RFC 6570
                implementation can be added later. *)
@@ -325,7 +323,8 @@ let handle_resources_read s ctx id params =
             in
             String.length resource_uri >= String.length prefix
             && String.sub resource_uri 0 (String.length prefix) = prefix
-          ) s.resource_templates
+          )
+          |> Option.map snd
         in
         begin match template_handler_opt with
         | Some rt ->
@@ -352,7 +351,7 @@ let handle_resources_read s ctx id params =
 
 let handle_prompts_list s id =
   let prompts_json =
-    List.map (fun rp -> Mcp_types.prompt_to_yojson rp.prompt) s.prompts
+    StringMap.fold (fun _ rp acc -> Mcp_types.prompt_to_yojson rp.prompt :: acc) s.prompts [] |> List.rev
   in
   Jsonrpc.make_response ~id ~result:(`Assoc [("prompts", `List prompts_json)])
 
@@ -376,9 +375,7 @@ let handle_prompts_get s ctx id params =
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params
         ~message:"Missing 'name' in prompts/get params" ()
     | Some prompt_name ->
-      let handler_opt =
-        List.find_opt (fun rp -> rp.prompt.Mcp_types.name = prompt_name) s.prompts
-      in
+      let handler_opt = StringMap.find_opt prompt_name s.prompts in
       begin match handler_opt with
       | None ->
         Jsonrpc.make_error ~id ~code:Error_codes.prompt_not_found
@@ -625,8 +622,8 @@ let dispatch s ctx log_level_ref (msg : Jsonrpc.message) : Jsonrpc.message optio
       | m when m = Notifications.resources_unsubscribe ->
         handle_resources_unsubscribe s req.id req.params
       | m when m = Notifications.resources_templates_list ->
-        let templates_json = List.map (fun rt ->
-          Mcp_types.resource_template_to_yojson rt.template) s.resource_templates in
+        let templates_json = StringMap.fold (fun _ rt acc ->
+          Mcp_types.resource_template_to_yojson rt.template :: acc) s.resource_templates [] |> List.rev in
         Jsonrpc.make_response ~id:req.id
           ~result:(`Assoc [("resourceTemplates", `List templates_json)])
       | m when m = Notifications.prompts_list ->
