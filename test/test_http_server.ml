@@ -501,6 +501,52 @@ let test_options_cors env () =
     Alcotest.(check bool) "allow-methods present" true
       (Option.is_some (Http.Header.get hdrs "access-control-allow-methods")))
 
+(* ── DNS rebinding protection ────────────────── *)
+
+let test_dns_rebinding_blocked env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* Request with non-localhost Origin should be blocked *)
+    let headers = Http.Header.of_list [
+      ("Content-Type", "application/json");
+      ("Origin", "https://evil.example.com");
+    ] in
+    let body = Cohttp_eio.Body.of_string (make_initialize_json ()) in
+    let resp, resp_body = Cohttp_eio.Client.call client ~sw ~headers ~body
+      `POST (base_uri port "/mcp") in
+    let status = Http.Status.to_int (Http.Response.status resp) in
+    Alcotest.(check int) "blocked with 403" 403 status;
+    let body_str = read_body resp_body in
+    Alcotest.(check bool) "error mentions origin" true
+      (String.length body_str > 0))
+
+let test_dns_rebinding_localhost_allowed env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* Request with localhost Origin should be allowed *)
+    let headers = Http.Header.of_list [
+      ("Content-Type", "application/json");
+      ("Origin", "http://localhost:3000");
+    ] in
+    let body = Cohttp_eio.Body.of_string (make_initialize_json ()) in
+    let resp, _body = Cohttp_eio.Client.call client ~sw ~headers ~body
+      `POST (base_uri port "/mcp") in
+    let status = Http.Status.to_int (Http.Response.status resp) in
+    Alcotest.(check int) "allowed with 200" 200 status)
+
+let test_dns_rebinding_no_origin_allowed env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* Request without Origin header should be allowed (same-origin) *)
+    let headers = Http.Header.of_list [
+      ("Content-Type", "application/json");
+    ] in
+    let body = Cohttp_eio.Body.of_string (make_initialize_json ()) in
+    let resp, _body = Cohttp_eio.Client.call client ~sw ~headers ~body
+      `POST (base_uri port "/mcp") in
+    let status = Http.Status.to_int (Http.Response.status resp) in
+    Alcotest.(check int) "allowed with 200" 200 status)
+
 (* ── Test suite ──────────────────────────────── *)
 
 let () =
@@ -533,5 +579,10 @@ let () =
       Alcotest.test_case "wrong path" `Quick (test_wrong_path env);
       Alcotest.test_case "method not allowed" `Quick (test_method_not_allowed env);
       Alcotest.test_case "options cors" `Quick (test_options_cors env);
+    ];
+    "dns_rebinding", [
+      Alcotest.test_case "non-localhost blocked" `Quick (test_dns_rebinding_blocked env);
+      Alcotest.test_case "localhost allowed" `Quick (test_dns_rebinding_localhost_allowed env);
+      Alcotest.test_case "no origin allowed" `Quick (test_dns_rebinding_no_origin_allowed env);
     ];
   ]
