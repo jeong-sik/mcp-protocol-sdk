@@ -43,10 +43,11 @@ let list_of (extract : 'a extractor) : 'a list extractor = function
   | `List items ->
     List.fold_left (fun acc item ->
       match acc, extract item with
-      | Ok lst, Ok v -> Ok (lst @ [v])
+      | Ok lst, Ok v -> Ok (v :: lst)
       | Error e, _ -> Error e
       | _, Error e -> Error e
     ) (Ok []) items
+    |> Result.map List.rev
   | j -> Error (Printf.sprintf "expected array, got %s" (Yojson.Safe.to_string j))
 
 (** {2 Field Access}

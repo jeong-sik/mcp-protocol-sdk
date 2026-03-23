@@ -141,11 +141,13 @@ let send_request t ~method_ ?params ?(timeout = default_timeout) () =
   match t.timeout_fn with
   | None -> do_request t ~method_ ?params ()
   | Some tf ->
+    (* Capture the request ID before do_request increments next_id *)
+    let request_id = Jsonrpc.Int t.next_id in
     begin try
       tf.run timeout (fun () -> do_request t ~method_ ?params ())
     with Eio.Time.Timeout ->
       (* Best effort: notify peer we gave up *)
-      let id = Jsonrpc.Int (t.next_id - 1) in
+      let id = request_id in
       (try
         ignore (send_notification t
           ~method_:Notifications.cancelled

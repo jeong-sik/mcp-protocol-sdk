@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-03-23
+
+### Added
+- **DNS rebinding protection**: HTTP server validates `Origin` header per MCP 2025-11-25.
+  Non-localhost origins return 403 Forbidden.
+- **Mcp-Protocol-Version header**: HTTP server validates and responds with protocol version.
+  Unsupported versions return 406 Not Acceptable. HTTP client sends the header on all requests.
+- **Client API consistency**: `list_resource_templates` added to all 3 clients
+  (Client, Generic_client, HttpClient). Hardcoded method strings replaced with
+  `Notifications.resources_templates_list`.
+
+### Fixed
+- **Memory_transport fiber safety**: `closed` flag changed from `mutable bool` to `bool Atomic.t`
+  with `Atomic.compare_and_set` in `close` to prevent double-close races.
+- **Tool_arg.list_of O(n)**: Changed from O(n²) `lst @ [v]` to O(n) `v :: lst |> List.rev`.
+- **HttpClient timeout request ID**: Capture request ID before `try` block instead of
+  recomputing with `t.next_id - 1` (could be wrong if concurrent requests exist).
+- **Tool_arg.mli doc**: Added `Mcp_types.` prefix to `tool_result_of_text` in example.
+- **Tool_arg.optional doc**: Clarified that parse failures return `default` (not just missing fields).
+
 ## [0.15.0] - 2026-03-23
 
 ### Added
