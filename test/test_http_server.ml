@@ -547,6 +547,85 @@ let test_dns_rebinding_no_origin_allowed env () =
     let status = Http.Status.to_int (Http.Response.status resp) in
     Alcotest.(check int) "allowed with 200" 200 status)
 
+(* ── Protocol version header tests ─────────── *)
+
+let test_protocol_version_header_in_response env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    let resp, _body = post_json client ~sw ~headers:[] port "/mcp"
+      (make_initialize_json ()) in
+    let status = Http.Response.status resp in
+    Alcotest.(check int) "status 200" 200 (Http.Status.to_int status);
+    let pv = Http.Header.get (Http.Response.headers resp)
+      "mcp-protocol-version" in
+    Alcotest.(check bool) "has protocol version header" true
+      (Option.is_some pv);
+    (* The value should be a supported version string *)
+    Alcotest.(check (option string)) "protocol version value"
+      (Some "2025-11-25") pv)
+
+let test_protocol_version_unsupported env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    let resp, _body = post_json client ~sw
+      ~headers:[("Mcp-Protocol-Version", "1999-01-01")] port "/mcp"
+      (make_initialize_json ()) in
+    let status = Http.Status.to_int (Http.Response.status resp) in
+    Alcotest.(check int) "status 406" 406 status)
+
+let test_protocol_version_valid env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    let resp, _body = post_json client ~sw
+      ~headers:[("Mcp-Protocol-Version", "2025-11-25")] port "/mcp"
+      (make_initialize_json ()) in
+    let status = Http.Status.to_int (Http.Response.status resp) in
+    Alcotest.(check int) "status 200" 200 status)
+
+(* ── DNS rebinding edge cases ─────────────── *)
+
+let test_dns_rebinding_localhost_ipv6 env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* Origin: http://[::1]:3000 should be allowed *)
+    let headers = Http.Header.of_list [
+      ("Content-Type", "application/json");
+      ("Origin", "http://[::1]:3000");
+    ] in
+    let body = Cohttp_eio.Body.of_string (make_initialize_json ()) in
+    let resp, _body = Cohttp_eio.Client.call client ~sw ~headers ~body
+      `POST (base_uri port "/mcp") in
+    let status = Http.Status.to_int (Http.Response.status resp) in
+    Alcotest.(check int) "ipv6 localhost allowed" 200 status)
+
+let test_dns_rebinding_127_with_port env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* Origin: http://127.0.0.1:8080 should be allowed *)
+    let headers = Http.Header.of_list [
+      ("Content-Type", "application/json");
+      ("Origin", "http://127.0.0.1:8080");
+    ] in
+    let body = Cohttp_eio.Body.of_string (make_initialize_json ()) in
+    let resp, _body = Cohttp_eio.Client.call client ~sw ~headers ~body
+      `POST (base_uri port "/mcp") in
+    let status = Http.Status.to_int (Http.Response.status resp) in
+    Alcotest.(check int) "127.0.0.1 with port allowed" 200 status)
+
+let test_dns_rebinding_subdomain_attack env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* Origin: http://localhost.evil.com should be BLOCKED *)
+    let headers = Http.Header.of_list [
+      ("Content-Type", "application/json");
+      ("Origin", "http://localhost.evil.com");
+    ] in
+    let body = Cohttp_eio.Body.of_string (make_initialize_json ()) in
+    let resp, _body = Cohttp_eio.Client.call client ~sw ~headers ~body
+      `POST (base_uri port "/mcp") in
+    let status = Http.Status.to_int (Http.Response.status resp) in
+    Alcotest.(check int) "subdomain attack blocked" 403 status)
+
 (* ── Test suite ──────────────────────────────── *)
 
 let () =
@@ -584,5 +663,13 @@ let () =
       Alcotest.test_case "non-localhost blocked" `Quick (test_dns_rebinding_blocked env);
       Alcotest.test_case "localhost allowed" `Quick (test_dns_rebinding_localhost_allowed env);
       Alcotest.test_case "no origin allowed" `Quick (test_dns_rebinding_no_origin_allowed env);
+      Alcotest.test_case "ipv6 localhost" `Quick (test_dns_rebinding_localhost_ipv6 env);
+      Alcotest.test_case "127.0.0.1 with port" `Quick (test_dns_rebinding_127_with_port env);
+      Alcotest.test_case "subdomain attack" `Quick (test_dns_rebinding_subdomain_attack env);
+    ];
+    "protocol_version", [
+      Alcotest.test_case "header in response" `Quick (test_protocol_version_header_in_response env);
+      Alcotest.test_case "unsupported version" `Quick (test_protocol_version_unsupported env);
+      Alcotest.test_case "valid version" `Quick (test_protocol_version_valid env);
     ];
   ]

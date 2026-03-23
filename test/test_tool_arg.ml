@@ -137,6 +137,42 @@ let test_tool_arg_e2e () =
 
   Mt.close client_t
 
+(* ── edge cases ──────────────────────────── *)
+
+let test_required_type_mismatch () =
+  (* args has "count" as string but we extract as int -> Error *)
+  let bad_args = Some (`Assoc [("count", `String "five")]) in
+  Alcotest.(check bool) "type mismatch is error"
+    true (Result.is_error (Tool_arg.required bad_args "count" Tool_arg.int))
+
+let test_list_of_empty () =
+  (* empty array -> Ok [] *)
+  let json = `List [] in
+  Alcotest.(check (result (list string) string)) "empty list ok"
+    (Ok []) (Tool_arg.list_of Tool_arg.string json)
+
+let test_list_of_nested () =
+  (* list_of (list_of string) for nested arrays *)
+  let json = `List [
+    `List [`String "a"; `String "b"];
+    `List [`String "c"];
+  ] in
+  Alcotest.(check (result (list (list string)) string)) "nested list ok"
+    (Ok [["a"; "b"]; ["c"]])
+    (Tool_arg.list_of (Tool_arg.list_of Tool_arg.string) json)
+
+let test_optional_type_mismatch () =
+  (* field present but wrong type -> returns default (documented behavior) *)
+  let bad_args = Some (`Assoc [("count", `String "not-an-int")]) in
+  Alcotest.(check int) "type mismatch returns default"
+    42 (Tool_arg.optional bad_args "count" Tool_arg.int ~default:42)
+
+let test_required_non_object_args () =
+  (* args is a JSON string, not object -> Error *)
+  let bad_args = Some (`String "not an object") in
+  Alcotest.(check bool) "non-object args is error"
+    true (Result.is_error (Tool_arg.required bad_args "x" Tool_arg.string))
+
 (* ── test suite ────────────────────────────── *)
 
 let () =
@@ -159,5 +195,12 @@ let () =
     "ergonomic", [
       Alcotest.test_case "tool convenience" `Quick test_ergonomic_tool;
       Alcotest.test_case "E2E with Tool_arg" `Quick test_tool_arg_e2e;
+    ];
+    "edge_cases", [
+      Alcotest.test_case "required type mismatch" `Quick test_required_type_mismatch;
+      Alcotest.test_case "list_of empty" `Quick test_list_of_empty;
+      Alcotest.test_case "list_of nested" `Quick test_list_of_nested;
+      Alcotest.test_case "optional type mismatch" `Quick test_optional_type_mismatch;
+      Alcotest.test_case "required non-object args" `Quick test_required_non_object_args;
     ];
   ]
