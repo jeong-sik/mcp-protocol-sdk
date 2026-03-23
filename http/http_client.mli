@@ -93,6 +93,10 @@ val subscribe_resource : t -> uri:string -> (unit, string) result
 (** Unsubscribe from change notifications for a resource URI. *)
 val unsubscribe_resource : t -> uri:string -> (unit, string) result
 
+(** List resource templates available on the server. *)
+val list_resource_templates : ?cursor:string -> t ->
+  (Mcp_types.resource_template list, string) result
+
 (** {2 Prompts} *)
 
 val list_prompts : ?cursor:string -> t -> (Mcp_types.prompt list, string) result

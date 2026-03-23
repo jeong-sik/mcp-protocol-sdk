@@ -275,7 +275,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
       | Some c -> Some (`Assoc [("cursor", `String c)])
       | None -> None
     in
-    match send_request t ~method_:"resources/templates/list" ?params () with
+    match send_request t ~method_:Notifications.resources_templates_list ?params () with
     | Error e -> Error e
     | Ok result ->
       Handler.parse_list_field "resourceTemplates" Mcp_types.resource_template_of_yojson result

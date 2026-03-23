@@ -234,6 +234,16 @@ let unsubscribe_resource t ~uri =
   | Error e -> Error e
   | Ok _ -> Ok ()
 
+let list_resource_templates ?cursor t =
+  let params = match cursor with
+    | Some c -> Some (`Assoc [("cursor", `String c)])
+    | None -> None
+  in
+  match send_request t ~method_:Notifications.resources_templates_list ?params () with
+  | Error e -> Error e
+  | Ok result ->
+    Mcp_protocol_eio.Handler.parse_list_field "resourceTemplates" Mcp_types.resource_template_of_yojson result
+
 (* ── prompts ─────────────────────────────────── *)
 
 let list_prompts ?cursor t =
