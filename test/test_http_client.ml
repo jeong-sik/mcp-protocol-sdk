@@ -97,6 +97,63 @@ let with_server ~env f =
         (fun () -> f endpoint net sw)
         ~finally:(fun () -> Eio.Promise.resolve stop_resolver ()))
 
+let with_callback_server ~env callback f =
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 0) in
+  let socket = Eio.Net.listen ~sw net addr ~backlog:16 in
+  let port =
+    match Eio.Net.listening_addr socket with
+    | `Tcp (_, port) -> port
+    | _ -> failwith "unexpected address"
+  in
+  let endpoint = Printf.sprintf "http://127.0.0.1:%d/mcp" port in
+  let stop, stop_resolver = Eio.Promise.create () in
+  let cohttp_server = Cohttp_eio.Server.make ~callback () in
+  Eio.Fiber.both
+    (fun () ->
+      Cohttp_eio.Server.run ~stop socket cohttp_server
+        ~on_error:(fun _exn -> ()))
+    (fun () ->
+      Fun.protect
+        (fun () -> f endpoint net sw)
+        ~finally:(fun () -> Eio.Promise.resolve stop_resolver ()))
+
+let body_to_string body =
+  Eio.Buf_read.of_flow ~max_size:(1024 * 1024) body |> Eio.Buf_read.take_all
+
+let contains_substring ~needle haystack =
+  let needle_len = String.length needle in
+  let haystack_len = String.length haystack in
+  let rec loop idx =
+    if idx + needle_len > haystack_len then
+      false
+    else if String.sub haystack idx needle_len = needle then
+      true
+    else
+      loop (idx + 1)
+  in
+  if needle_len = 0 then true else loop 0
+
+let request_id body_str =
+  match Yojson.Safe.from_string body_str with
+  | `Assoc fields -> Option.value (List.assoc_opt "id" fields) ~default:(`Int 1)
+  | _ -> `Int 1
+
+let json_headers extra =
+  Cohttp.Header.of_list (("content-type", "application/json") :: extra)
+
+let respond_json ?(headers = []) body =
+  Cohttp_eio.Server.respond_string ~headers:(json_headers headers) ~status:`OK
+    ~body:(Yojson.Safe.to_string body) ()
+
+let init_client client =
+  match
+    Http_client.initialize client ~client_name:"test" ~client_version:"1.0"
+  with
+  | Ok _ -> ()
+  | Error e -> Alcotest.fail (Printf.sprintf "init: %s" e)
+
 (* ── Tests ───────────────────────────────────── *)
 
 let test_create env () =
@@ -254,6 +311,104 @@ let test_notification_handler env () =
     | Ok _ -> ()
     | Error e -> Alcotest.fail e)
 
+let test_initialize_from_multiline_sse env () =
+  with_callback_server ~env
+    (fun _conn _request body ->
+      let _id = request_id (body_to_string body) in
+      let sse_body =
+        String.concat "\n"
+          [
+            "data: {\"jsonrpc\":\"2.0\",\"id\":1,";
+            "data: \"result\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"serverInfo\":{\"name\":\"sse-server\",\"version\":\"1.0.0\"}}}";
+            "";
+          ]
+      in
+      let headers =
+        Cohttp.Header.of_list
+          [
+            ("content-type", "text/event-stream");
+            (Http_session.header_name, "sse-session");
+          ]
+      in
+      Cohttp_eio.Server.respond_string ~headers ~status:`OK ~body:sse_body ())
+    (fun endpoint net sw ->
+      let client = Http_client.create ~endpoint ~net ~sw () in
+      match
+        Http_client.initialize client ~client_name:"test" ~client_version:"1.0"
+      with
+      | Ok result ->
+          Alcotest.(check string) "server name" "sse-server"
+            result.server_info.name
+      | Error e -> Alcotest.fail e)
+
+let test_list_tools_all_detects_cursor_cycle env () =
+  let tool_json name description =
+    `Assoc
+      [
+        ("name", `String name);
+        ("description", `String description);
+        ("inputSchema", `Assoc [ ("type", `String "object") ]);
+      ]
+  in
+  let page = ref 0 in
+  with_callback_server ~env
+    (fun _conn _request body ->
+      let body_str = body_to_string body in
+      match Yojson.Safe.from_string body_str with
+      | `Assoc fields -> (
+          match List.assoc_opt "method" fields with
+          | Some (`String "initialize") ->
+              let id = Option.value (List.assoc_opt "id" fields) ~default:(`Int 1) in
+              respond_json ~headers:[ (Http_session.header_name, "loop-session") ]
+                (`Assoc
+                  [
+                    ("jsonrpc", `String "2.0");
+                    ("id", id);
+                    ( "result",
+                      `Assoc
+                        [
+                          ("protocolVersion", `String "2025-11-25");
+                          ("capabilities", `Assoc []);
+                          ( "serverInfo",
+                            `Assoc
+                              [
+                                ("name", `String "loop-server");
+                                ("version", `String "1.0.0");
+                              ] );
+                        ] );
+                  ])
+          | Some (`String "notifications/initialized") ->
+              Cohttp_eio.Server.respond_string ~status:`Accepted ~body:"" ()
+          | Some (`String "tools/list") ->
+              incr page;
+              let id = Option.value (List.assoc_opt "id" fields) ~default:(`Int 2) in
+              let tools =
+                if !page = 1 then [ tool_json "one" "first" ]
+                else [ tool_json "two" "second" ]
+              in
+              respond_json
+                (`Assoc
+                  [
+                    ("jsonrpc", `String "2.0");
+                    ("id", id);
+                    ( "result",
+                      `Assoc
+                        [
+                          ("tools", `List tools);
+                          ("nextCursor", `String "loop");
+                        ] );
+                  ])
+          | _ -> Cohttp_eio.Server.respond_string ~status:`Bad_request ~body:"bad request" ())
+      | _ -> Cohttp_eio.Server.respond_string ~status:`Bad_request ~body:"bad request" ())
+    (fun endpoint net sw ->
+      let client = Http_client.create ~endpoint ~net ~sw () in
+      init_client client;
+      match Http_client.list_tools_all client with
+      | Ok _ -> Alcotest.fail "expected cursor loop detection"
+      | Error msg ->
+          Alcotest.(check bool) "loop detected" true
+            (contains_substring ~needle:"cursor loop detected" msg))
+
 let test_full_lifecycle env () =
   with_server ~env (fun endpoint net sw ->
     let client = Http_client.create ~endpoint ~net ~sw () in
@@ -312,6 +467,8 @@ let () =
     ];
     "lifecycle", [
       Alcotest.test_case "initialize" `Quick (test_initialize env);
+      Alcotest.test_case "initialize from multiline sse" `Quick
+        (test_initialize_from_multiline_sse env);
       Alcotest.test_case "ping" `Quick (test_ping env);
       Alcotest.test_case "close" `Quick (test_close env);
       Alcotest.test_case "close without session" `Quick
@@ -325,6 +482,8 @@ let () =
     ];
     "tools", [
       Alcotest.test_case "list" `Quick (test_list_tools env);
+      Alcotest.test_case "list all detects cursor cycle" `Quick
+        (test_list_tools_all_detects_cursor_cycle env);
       Alcotest.test_case "call" `Quick (test_call_tool env);
     ];
     "resources", [

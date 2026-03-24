@@ -85,6 +85,8 @@ val ping : t -> (unit, string) result
     @param cursor Optional pagination cursor from a previous response. *)
 val list_tools : ?cursor:string -> t -> (Mcp_types.tool list, string) result
 
+val list_tools_all : t -> (Mcp_types.tool list, string) result
+
 (** Call a tool by name with optional JSON arguments. *)
 val call_tool : t -> name:string -> ?arguments:Yojson.Safe.t -> unit ->
   (Mcp_types.tool_result, string) result
@@ -94,6 +96,8 @@ val call_tool : t -> name:string -> ?arguments:Yojson.Safe.t -> unit ->
 (** List resources available on the server.
     @param cursor Optional pagination cursor from a previous response. *)
 val list_resources : ?cursor:string -> t -> (Mcp_types.resource list, string) result
+
+val list_resources_all : t -> (Mcp_types.resource list, string) result
 
 (** Read a resource by its URI. *)
 val read_resource : t -> uri:string ->
@@ -114,6 +118,8 @@ val list_resource_templates : ?cursor:string -> t ->
 (** List prompts available on the server.
     @param cursor Optional pagination cursor from a previous response. *)
 val list_prompts : ?cursor:string -> t -> (Mcp_types.prompt list, string) result
+
+val list_prompts_all : t -> (Mcp_types.prompt list, string) result
 
 (** Get a prompt by name with optional string arguments. *)
 val get_prompt : t -> name:string -> ?arguments:(string * string) list -> unit ->

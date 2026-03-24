@@ -141,6 +141,26 @@ type tool = {
 (** Alias for figma-mcp compatibility *)
 type tool_def = tool
 
+let tool_of_yojson_generated = tool_of_yojson
+
+let tool_of_yojson = function
+  | `Assoc fields ->
+    let normalized_fields =
+      match List.assoc_opt "inputSchema" fields with
+      | Some _ -> fields
+      | None ->
+        let fallback_schema =
+          match List.assoc_opt "input_schema" fields with
+          | Some schema -> schema
+          | None -> `Assoc [("type", `String "object")]
+        in
+        ("inputSchema", fallback_schema)
+        :: List.filter (fun (key, _) -> key <> "input_schema") fields
+    in
+    tool_of_yojson_generated (`Assoc normalized_fields)
+  | json ->
+    tool_of_yojson_generated json
+
 (** Tool call result content types.
     MCP 2025-11-25 adds AudioContent and ResourceLinkContent. *)
 type tool_content =

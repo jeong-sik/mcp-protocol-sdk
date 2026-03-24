@@ -107,6 +107,12 @@ val parse_list_field :
   Yojson.Safe.t ->
   ('a list, string) result
 
+val parse_paginated_list_field :
+  string ->
+  (Yojson.Safe.t -> ('a, string) result) ->
+  Yojson.Safe.t ->
+  ('a list * string option, string) result
+
 (** Build the JSON params for an [initialize] request.
     Used by both stdio and HTTP clients. *)
 val build_initialize_params :

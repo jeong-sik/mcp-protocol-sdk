@@ -65,6 +65,21 @@ let test_tool_no_description () =
     Alcotest.(check (option string)) "no desc" None decoded.description
   | Error e -> Alcotest.fail e
 
+let test_tool_input_schema_snake_case () =
+  let tool_json =
+    `Assoc [
+      ("name", `String "compat_tool");
+      ("description", `String "snake_case schema");
+      ("input_schema", `Assoc [("type", `String "object")]);
+    ]
+  in
+  match Mcp_types.tool_of_yojson tool_json with
+  | Ok decoded ->
+    Alcotest.(check string) "name" "compat_tool" decoded.name;
+    Alcotest.check json "schema"
+      (`Assoc [("type", `String "object")]) decoded.input_schema
+  | Error e -> Alcotest.fail e
+
 (* --- tool_def alias --- *)
 
 let test_tool_def_alias () =
@@ -1058,6 +1073,7 @@ let () =
     "tool", [
       Alcotest.test_case "round-trip" `Quick test_tool_roundtrip;
       Alcotest.test_case "no description" `Quick test_tool_no_description;
+      Alcotest.test_case "input_schema compatibility" `Quick test_tool_input_schema_snake_case;
       Alcotest.test_case "tool_def alias" `Quick test_tool_def_alias;
       Alcotest.test_case "output_schema roundtrip" `Quick test_tool_output_schema_roundtrip;
       Alcotest.test_case "execution roundtrip" `Quick test_tool_execution_roundtrip;
