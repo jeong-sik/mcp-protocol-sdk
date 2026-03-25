@@ -7,6 +7,15 @@
 open Mcp_protocol
 module Mt = Mcp_protocol_eio.Memory_transport
 module GS = Mcp_protocol_eio.Generic_server.Make(Mt)
+module Failing_close_transport = struct
+  include Mt
+
+  let close _transport =
+    raise (Failure "boom during close")
+end
+
+module GS_failing_close =
+  Mcp_protocol_eio.Generic_server.Make(Failing_close_transport)
 
 let () = Eio_main.run @@ fun env ->
 
@@ -230,12 +239,26 @@ let test_middleware_composition () =
   Mt.close client_raw
 in
 
+(* ── test: close failures are logged, not re-raised ─── *)
+
+let test_close_failure_is_swallowed () =
+  Eio.Switch.run @@ fun sw ->
+  let client_t, server_t = Mt.create_pair () in
+  let server = GS_failing_close.create ~name:"close-failing" ~version:"1" () in
+  Eio.Fiber.fork ~sw (fun () ->
+    GS_failing_close.run server ~transport:server_t
+      ~clock:(Eio.Stdenv.clock env) ());
+  Mt.close client_t
+in
+
 (* ── test suite ──────────────────────────────── *)
 
 Alcotest.run "Generic_server" [
   "lifecycle", [
     Alcotest.test_case "initialize handshake" `Quick test_initialize;
     Alcotest.test_case "ping" `Quick test_ping;
+    Alcotest.test_case "close failure is swallowed" `Quick
+      test_close_failure_is_swallowed;
   ];
   "tools", [
     Alcotest.test_case "tool call" `Quick test_tool_call;

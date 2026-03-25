@@ -83,6 +83,14 @@ module Make (T : Mcp_protocol.Transport.S) = struct
   let prompt name ?description ?arguments handler s =
     { s with handler = Handler.prompt name ?description ?arguments handler s.handler }
 
+  let close_transport ~server_name transport =
+    try T.close transport
+    with
+    | Out_of_memory | Stack_overflow as exn -> raise exn
+    | exn ->
+      Printf.eprintf "[%s] Close error: %s\n%!" server_name
+        (Printexc.to_string exn)
+
   (* ── notification sending ────────────────────────────── *)
 
   let send_notification_via_transport transport ~method_ ~params =
@@ -219,11 +227,10 @@ module Make (T : Mcp_protocol.Transport.S) = struct
         | None -> ()
         end;
         loop ()
-    in
-    Fun.protect (fun () -> loop ())
-      ~finally:(fun () ->
-        (try T.close transport
-         with _ -> ());
+  in
+  Fun.protect (fun () -> loop ())
+    ~finally:(fun () ->
+        close_transport ~server_name:(Handler.name s.handler) transport;
         s.log_level <- !log_level_ref;
         s.transport_ref <- None)
 
