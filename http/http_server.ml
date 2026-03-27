@@ -145,12 +145,12 @@ let make_context s : Mcp_protocol_eio.Handler.context =
     else
       Ok ()
   in
-  let send_progress ~token ~progress ~total =
+  let send_progress ~token ~progress ~message ~total =
     let p = Mcp_result.{
       progress_token = token;
       progress;
       total;
-      message = None;
+      message;
     } in
     send_notification
       ~method_:Notifications.progress

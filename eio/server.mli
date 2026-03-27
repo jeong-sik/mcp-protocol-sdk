@@ -29,7 +29,7 @@ type context = Handler.context = {
   send_log : Logging.log_level -> string -> (unit, string) result;
   (** Send a logging/message notification. Only sent if the level
       is at or above the current log level set by the client. *)
-  send_progress : token:Mcp_result.progress_token -> progress:float -> total:float option -> (unit, string) result;
+  send_progress : token:Mcp_result.progress_token -> progress:float -> message:string option -> total:float option -> (unit, string) result;
   (** Send a progress notification for a long-running operation. *)
   request_sampling : Sampling.create_message_params -> (Sampling.create_message_result, string) result;
   (** Send a [sampling/createMessage] request to the client and wait for the response.
