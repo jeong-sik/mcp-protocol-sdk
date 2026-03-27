@@ -547,6 +547,46 @@ let test_dns_rebinding_no_origin_allowed env () =
     let status = Http.Status.to_int (Http.Response.status resp) in
     Alcotest.(check int) "allowed with 200" 200 status)
 
+(* ── POST JSON-RPC batch rejection ──────────── *)
+
+let test_post_batch_rejected env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* Send a JSON array (batch request) *)
+    let batch_json = Printf.sprintf
+      {|[%s,%s]|} (make_initialize_json ()) (make_ping_json ()) in
+    let _resp, body = post_json client ~sw ~headers:[] port "/mcp"
+      batch_json in
+    let json = json_of_body body in
+    match json with
+    | `Assoc fields ->
+      (match List.assoc_opt "error" fields with
+       | Some (`Assoc err_fields) ->
+         let code = List.assoc_opt "code" err_fields in
+         Alcotest.(check bool) "invalid_request error code" true
+           (code = Some (`Int Error_codes.invalid_request));
+         let msg = List.assoc_opt "message" err_fields in
+         Alcotest.(check bool) "batch not supported message" true
+           (msg = Some (`String "JSON-RPC batching is not supported"))
+       | _ -> Alcotest.fail "expected error object")
+    | _ -> Alcotest.fail "expected JSON object")
+
+let test_post_empty_batch_rejected env () =
+  with_server ~env (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* Send an empty JSON array *)
+    let _resp, body = post_json client ~sw ~headers:[] port "/mcp" "[]" in
+    let json = json_of_body body in
+    match json with
+    | `Assoc fields ->
+      (match List.assoc_opt "error" fields with
+       | Some (`Assoc err_fields) ->
+         let code = List.assoc_opt "code" err_fields in
+         Alcotest.(check bool) "invalid_request error code" true
+           (code = Some (`Int Error_codes.invalid_request))
+       | _ -> Alcotest.fail "expected error object")
+    | _ -> Alcotest.fail "expected JSON object")
+
 (* ── Protocol version header tests ─────────── *)
 
 let test_protocol_version_header_in_response env () =
@@ -671,5 +711,9 @@ let () =
       Alcotest.test_case "header in response" `Quick (test_protocol_version_header_in_response env);
       Alcotest.test_case "unsupported version" `Quick (test_protocol_version_unsupported env);
       Alcotest.test_case "valid version" `Quick (test_protocol_version_valid env);
+    ];
+    "batch_rejection", [
+      Alcotest.test_case "batch rejected" `Quick (test_post_batch_rejected env);
+      Alcotest.test_case "empty batch rejected" `Quick (test_post_empty_batch_rejected env);
     ];
   ]

@@ -43,7 +43,7 @@ type tool_handler = context -> string -> Yojson.Safe.t option -> (Mcp_types.tool
 type resource_handler = context -> string -> (Mcp_types.resource_contents list, string) result
 type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.prompt_result, string) result
 type completion_handler =
-  Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
+  Mcp_types.completion_reference -> string -> string -> context:Mcp_types.completion_context option -> Mcp_types.completion_result
 
 (** Callbacks for serving tasks/get, tasks/result, tasks/list, tasks/cancel.
     Each handler receives a {!context} for sending notifications/progress

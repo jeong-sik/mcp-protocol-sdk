@@ -224,6 +224,12 @@ let handle_post_parsed s request json_result : Cohttp_eio.Server.response =
       ~code:Error_codes.parse_error
       ~message:(Printf.sprintf "JSON parse error: %s" msg) () in
     respond_json ~status:`OK (Jsonrpc.message_to_yojson err)
+  | Ok (`List _) ->
+    (* MCP spec 2025-06-18: JSON-RPC batching is not supported. *)
+    let err = Jsonrpc.make_error ~id:(Jsonrpc.Null)
+      ~code:Error_codes.invalid_request
+      ~message:"JSON-RPC batching is not supported" () in
+    respond_json ~status:`OK (Jsonrpc.message_to_yojson err)
   | Ok json ->
     let is_init = is_initialize_request json in
     if is_init then

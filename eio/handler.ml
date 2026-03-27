@@ -24,7 +24,7 @@ type tool_handler = context -> string -> Yojson.Safe.t option -> (Mcp_types.tool
 type resource_handler = context -> string -> (Mcp_types.resource_contents list, string) result
 type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.prompt_result, string) result
 type completion_handler =
-  Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
+  Mcp_types.completion_reference -> string -> string -> context:Mcp_types.completion_context option -> Mcp_types.completion_result
 
 type task_handlers = {
   get: context -> string -> (Mcp_types.task, string) result;
@@ -497,9 +497,17 @@ let handle_completion_complete s id params =
           end
         | _ -> Error "Missing 'argument' in completion/complete params"
       in
+      let context = match List.assoc_opt "context" fields with
+        | Some j ->
+          begin match Mcp_types.completion_context_of_yojson j with
+          | Ok ctx -> Some ctx
+          | Error _ -> None
+          end
+        | None -> None
+      in
       begin match ref_, argument with
       | Ok ref_, Ok (arg_name, arg_value) ->
-        let result = handler ref_ arg_name arg_value in
+        let result = handler ref_ arg_name arg_value ~context in
         let completion_json = Mcp_types.completion_result_to_yojson result in
         Jsonrpc.make_response ~id
           ~result:(`Assoc [("completion", completion_json)])

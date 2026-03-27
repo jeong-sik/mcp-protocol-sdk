@@ -53,9 +53,9 @@ type resource_handler = context -> string -> (Mcp_types.resource_contents list, 
 (** Prompt handler: receives context, prompt name and argument pairs, returns prompt result or error string. *)
 type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.prompt_result, string) result
 
-(** Completion handler: receives reference, argument name, partial value, returns completion result. *)
+(** Completion handler: receives reference, argument name, partial value, optional context, returns completion result. *)
 type completion_handler =
-  Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
+  Mcp_types.completion_reference -> string -> string -> context:Mcp_types.completion_context option -> Mcp_types.completion_result
 
 (** {2 Server} *)
 

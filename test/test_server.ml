@@ -124,7 +124,7 @@ let prompt_handler _ctx _name args =
 
 (* ── completion setup ─────────────────────────────────── *)
 
-let test_completion_handler ref_ arg_name _arg_value =
+let test_completion_handler ref_ arg_name _arg_value ~context:_context =
   match ref_ with
   | Mcp_types.Prompt_ref { name } ->
     if name = "greeting" && arg_name = "name" then
