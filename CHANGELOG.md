@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-03-27
+
+### Added
+- **MCP spec 2025-06-18 version**: Registered in version negotiation with
+  `has_structured_output`, `has_resource_links`, `has_extensions` feature flags.
+  Fixes version negotiation for clients requesting this spec version.
+- **`_meta` field**: Added to `initialize_params`, `initialize_result`,
+  `tool_result`, `create_message_params`, `create_message_result`.
+  Enables extension data pass-through across SDK boundaries.
+- **`title` field**: Added to `resource`, `resource_template`, and `prompt`
+  types per MCP 2025-06-18 spec. Previously only `tool` had this field.
+- **`extensions` field**: Added to `server_capabilities` and
+  `client_capabilities` for extension negotiation per MCP 2025-11-25.
+- **`send_progress` message parameter**: Exposed `message: string option`
+  on `send_progress` in all server implementations. The field existed in
+  the progress type but was hardcoded to `None` in the handler API.
+- **`completion_context` handler wiring**: The `completion_handler` type
+  now receives `~context:Mcp_types.completion_context option` from the
+  request params. Previously the context was parsed but discarded.
+- **JSON-RPC batch rejection**: HTTP server now returns `-32600
+  (invalid_request)` with a clear message for batch requests instead of
+  a generic parse error. MCP 2025-06-18 removed batch support.
+- **Typed sampling tools**: `create_message_params.tools` is now
+  `sampling_tool list option` and `tool_choice` is
+  `sampling_tool_choice option` instead of raw `Yojson.Safe.t option`.
+- **OAuth enhancements**: Client ID Metadata Documents (CIMD) support,
+  OpenID Connect Discovery, incremental consent via WWW-Authenticate.
+
+### Changed
+- **BREAKING**: `completion_handler` type signature now includes
+  `~context:Mcp_types.completion_context option` parameter.
+- **BREAKING**: `send_progress` now takes `~message:string option`
+  (labeled, not optional) between `~progress` and `~total`.
+- **BREAKING**: `create_message_params.tools` changed from
+  `Yojson.Safe.t option` to `sampling_tool list option`.
+- **BREAKING**: `create_message_params.tool_choice` changed from
+  `Yojson.Safe.t option` to `sampling_tool_choice option`.
+- **BREAKING**: `server_capabilities` and `client_capabilities` have
+  new `extensions` field.
+- **BREAKING**: `initialize_params`, `initialize_result`, `tool_result`,
+  `create_message_params`, `create_message_result` have new `_meta` field.
+- Version feature mapping corrected: elicitation starts at 2025-06-18
+  (was incorrectly mapped to 2025-03-26).
+
 ## [0.15.1] - 2026-03-23
 
 ### Added

@@ -1,30 +1,137 @@
 # MCP Protocol SDK for OCaml
 
-A pure OCaml implementation of the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) types and utilities.
+![CI](https://github.com/jeong-sik/mcp-protocol-sdk/actions/workflows/ci.yml/badge.svg)
 
-## Overview
+A pure OCaml 5.x implementation of the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), covering specification versions 2024-11-05 through 2025-11-25.
 
-MCP enables LLMs to interact with external tools, resources, and prompts through a standardized protocol. This SDK provides:
+## Packages
 
-- **JSON-RPC 2.0** types and utilities for wire protocol
-- **MCP Primitives** (Tools, Resources, Prompts) with typed capabilities
-- **Stdio Transport** (`mcp_protocol_eio`) — NDJSON over stdin/stdout
-- **HTTP Transport** (`mcp_protocol_http`) — Streamable HTTP with SSE, sessions, cohttp-eio
-- **Functor Architecture** — `Generic_server.Make(T)` / `Generic_client.Make(T)` for any transport
-- **Middleware** — composable transport wrappers via functor chaining
-- **Tool_arg** — type-safe argument extraction with monadic `let*` binding
-- **Memory Transport** — zero-IO paired transport for testing
-- **Protocol Versioning** with negotiation support (2025-11-25)
+| OPAM Package | Description | Key Modules |
+|---|---|---|
+| `mcp_protocol` | Core types, JSON-RPC 2.0, serialization | `Mcp_types`, `Jsonrpc`, `Sampling`, `Logging`, `Auth` |
+| `mcp_protocol_eio` | Stdio transport, functor server/client | `Generic_server`, `Generic_client`, `Stdio_transport`, `Memory_transport`, `Middleware` |
+| `mcp_protocol_http` | Streamable HTTP, SSE, OAuth 2.1 | `Http_server`, `Http_client`, `Oauth_client`, `Auth_middleware` |
 
-Setup 가이드: `docs/SETUP.md`  
-Install Checklist: `docs/INSTALL-CHECKLIST.md`
+## Feature Matrix
+
+### Protocol Versions
+
+| Version | Added Capabilities |
+|---|---|
+| 2024-11-05 | Tools, Resources, Prompts (initial stable) |
+| 2025-03-26 | Streamable HTTP, OAuth 2.1, tool annotations, audio content |
+| 2025-06-18 | Structured output, elicitation, resource links, title fields |
+| 2025-11-25 | Sampling, tasks (experimental), icons, extensions |
+
+Version negotiation selects the highest mutually-supported version during the initialize handshake. Use `Version.negotiate`, `Version.is_supported`, and `Version.features_of_version` to query capabilities at runtime.
+
+### Transports
+
+| Transport | Package | Description |
+|---|---|---|
+| Stdio (NDJSON) | `mcp_protocol_eio` | Newline-delimited JSON over stdin/stdout |
+| Streamable HTTP | `mcp_protocol_http` | HTTP + SSE via `cohttp-eio`, with session management |
+| In-memory | `mcp_protocol_eio` | Paired channels for zero-IO testing (`Memory_transport`) |
+
+### Server Primitives
+
+| Primitive | Fields |
+|---|---|
+| Tools | `name`, `description`, `title`, `input_schema`, `output_schema`, `annotations` (read_only, destructive, idempotent, open_world hints), `icon`, `execution` (task support) |
+| Resources | `uri`, `name`, `title`, `description`, `mime_type`, `icon`. Templates via `resource_template`. Subscriptions via `subscribe`/`unsubscribe`. |
+| Prompts | `name`, `title`, `description`, `arguments`, `icon` |
+
+### Client Features
+
+| Feature | Module | Description |
+|---|---|---|
+| Sampling | `Sampling` | `createMessage` with `model_preferences`, `sampling_tool` list, `sampling_tool_choice` (Auto/None/Tool) |
+| Elicitation | `Mcp_types_elicitation` | Form mode (schema-driven) and URL mode. Actions: Accept, Decline, Cancel |
+| Tasks | `Mcp_types_tasks` | Experimental (2025-11-25). Status types: Working, Input_required, Completed, Failed, Cancelled. Classified into `terminal_status` and `active_status` at the type level |
+| Logging | `Logging` | RFC 5424 levels: Debug, Info, Notice, Warning, Error, Critical, Alert, Emergency. `setLevel` request and `notifications/message` |
+| Roots | `Mcp_types` | Client file system roots with `list_changed` notification support |
+| Completion | `Mcp_types_completion` | Prompt and resource reference completion with `completion_context` for multi-argument awareness |
+| Progress | `Mcp_result` | Progress notifications with `progress_token`, `progress`, `total`, and `message` fields |
+| Cancellation | `Mcp_result` | Cancel in-flight requests by `request_id` with optional `reason` |
+
+### Content Types
+
+| Type | Variant | Fields |
+|---|---|---|
+| Text | `TextContent` | `text`, `annotations` |
+| Image | `ImageContent` | `data` (base64), `mime_type`, `annotations` |
+| Audio | `AudioContent` | `data` (base64), `mime_type`, `annotations` |
+| Embedded Resource | `ResourceContent` | `resource` (uri + text/blob) |
+| Resource Link | `ResourceLinkContent` | `uri`, `name`, `description`, `mime_type`, `annotations` |
+
+### Structured Output
+
+Tools can declare an `output_schema` (JSON Schema). When present, `tool_result.structured_content` carries the typed JSON output alongside the human-readable `content` list.
+
+### OAuth 2.1 (`mcp_protocol_http`)
+
+| Capability | RFC | Module |
+|---|---|---|
+| PKCE (S256) | RFC 7636 | `Oauth_client.generate_pkce` |
+| Authorization code exchange | RFC 6749 | `Oauth_client.exchange_code` |
+| Token refresh | RFC 6749 | `Oauth_client.refresh_token` |
+| Discovery | RFC 8414 | `Oauth_client.discover` |
+| Dynamic client registration | RFC 7591 | `Oauth_client.register_client` |
+| Bearer token injection | RFC 6750 | `Oauth_client.inject_bearer_token` |
+| Server-side bearer validation | RFC 6750 S3 | `Auth_middleware.check_auth` |
+| Protected resource metadata | RFC 9728 | `Auth_middleware.resource_metadata` |
+| CSRF state parameter | | `Oauth_client.generate_state`, `validate_state` |
+| Credential store | | `Oauth_client.credential_store` (pluggable) |
+| Incremental consent | | `build_authorization_url ~scopes` |
+
+HTTPS is enabled automatically via `tls-eio` + system CA certificates.
+
+### Extension Data
+
+All initialize params/results, tool results, and sampling messages carry an optional `_meta` field (`Yojson.Safe.t option`) for passing extension data through the protocol without schema changes.
+
+### Extensions and Experimental
+
+Both `server_capabilities` and `client_capabilities` include `extensions` and `experimental` fields (`Yojson.Safe.t option`) for capability negotiation of non-standard features.
+
+## Architecture
+
+### Functor-based Transport Abstraction
+
+`Generic_server.Make(T)` and `Generic_client.Make(T)` produce a server or client for any module satisfying the `Transport.S` signature. This means the same application logic runs over stdio, HTTP, or in-memory transports with no code changes.
+
+```ocaml
+(* Stdio *)
+module Stdio_server = Mcp_protocol_eio.Generic_server.Make(Stdio_transport)
+
+(* In-memory for tests *)
+module Test_server = Mcp_protocol_eio.Generic_server.Make(Memory_transport)
+
+(* With logging middleware *)
+module Logged = Mcp_protocol_eio.Middleware.Logging(Stdio_transport)
+module Debug_server = Mcp_protocol_eio.Generic_server.Make(Logged)
+```
+
+### Middleware
+
+`Middleware.Logging(T)` wraps any transport with stderr message logging. Additional middleware can be composed by chaining functors.
+
+### Tool_arg -- Type-safe Argument Extraction
+
+Extract tool arguments without manual JSON pattern matching:
+
+```ocaml
+let handler _ctx _name args =
+  let open Tool_arg in
+  let* text = required args "text" string in
+  let count = optional args "count" int ~default:1 in
+  Ok (Mcp_types.tool_result_of_text (String.concat "" (List.init count (fun _ -> text))))
+```
+
+Available extractors: `string`, `int`, `float`, `bool`, `json`, `list_of`.
+Field access: `required` (returns `Error` on missing/parse failure), `optional` (returns default), `optional_opt` (returns `'a option`).
 
 ## Quickstart
-
-```bash
-opam pin add mcp_protocol git+https://github.com/jeong-sik/mcp-protocol-sdk.git
-```
-## Installation
 
 ```bash
 opam pin add mcp_protocol git+https://github.com/jeong-sik/mcp-protocol-sdk.git
@@ -34,82 +141,14 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 0.14.0))
- (mcp_protocol_eio (>= 0.14.0))   ;; for stdio transport + functor server/client
- (mcp_protocol_http (>= 0.14.0))) ;; for HTTP transport
+ (mcp_protocol (>= 0.15.0))
+ (mcp_protocol_eio (>= 0.15.0))   ; stdio transport + functor server/client
+ (mcp_protocol_http (>= 0.15.0))) ; HTTP transport + OAuth
 ```
-
-## Docs
-
-- [Install Checklist](docs/INSTALL-CHECKLIST.md) - Post-install checks
-- [MCP Config Template](docs/MCP-TEMPLATE.md) - `~/.mcp.json` template (for servers)
 
 ## Usage
 
-### Basic JSON-RPC Messages
-
-```ocaml
-open Mcp_protocol
-
-(* Create a JSON-RPC request *)
-let req = Jsonrpc.make_request
-  ~id:(Jsonrpc.Int 1)
-  ~method_:"tools/list"
-  ()
-
-(* Create a notification (no id, no response expected) *)
-let notif = Jsonrpc.make_notification
-  ~method_:"notifications/initialized"
-  ()
-
-(* Create a success response *)
-let resp = Jsonrpc.make_response
-  ~id:(Jsonrpc.Int 1)
-  ~result:(`Assoc [("tools", `List [])])
-
-(* Create an error response *)
-let err = Jsonrpc.make_error
-  ~id:(Jsonrpc.Int 1)
-  ~code:Error_codes.method_not_found
-  ~message:"Method not found"
-  ()
-```
-
-### MCP Types
-
-```ocaml
-open Mcp_protocol
-
-(* Use convenience constructors *)
-let my_tool = Mcp_types.make_tool
-  ~name:"calculate"
-  ~description:"Perform mathematical calculations"
-  ~title:"Calculator"
-  ~annotations:{ title = None; read_only_hint = Some true;
-                 destructive_hint = Some false; idempotent_hint = Some true;
-                 open_world_hint = None }
-  ()
-```
-
-### Tool_arg — Type-safe Argument Extraction (v0.14.0+)
-
-Extract tool arguments without manual JSON pattern matching:
-
-```ocaml
-open Mcp_protocol
-
-let handler _ctx _name args =
-  let open Tool_arg in
-  let* text = required args "text" string in
-  let count = optional args "count" int ~default:1 in
-  let repeated = String.concat "" (List.init count (fun _ -> text)) in
-  Ok (Mcp_types.tool_result_of_text repeated)
-```
-
-Available extractors: `string`, `int`, `float`, `bool`, `json`, `list_of`.
-Field access: `required` (returns `Error` if missing), `optional` (returns default), `optional_opt` (returns `'a option`).
-
-### Ergonomic Server API (v0.14.0+)
+### Ergonomic Server API
 
 Register tools, resources, and prompts in one call:
 
@@ -133,12 +172,9 @@ let server =
              content = PromptText { type_ = "text"; text = "Hello, " ^ who } }] })
 ```
 
-### Functor Architecture (v0.14.0+)
-
-Run the same server/client over any transport:
+### In-memory Testing
 
 ```ocaml
-(* In-memory transport for testing *)
 module Mt = Mcp_protocol_eio.Memory_transport
 module Test_server = Mcp_protocol_eio.Generic_server.Make(Mt)
 module Test_client = Mcp_protocol_eio.Generic_client.Make(Mt)
@@ -154,36 +190,24 @@ let () =
     Test_server.run server ~transport:server_t ~clock:(Eio.Stdenv.clock env) ());
   let client = Test_client.create ~transport:client_t ~clock:(Eio.Stdenv.clock env) () in
   match Test_client.initialize client ~client_name:"test" ~client_version:"1.0" with
-  | Ok _ -> (* ready to call tools *)
-    ignore (Test_client.call_tool client ~name:"ping" ())
+  | Ok _ -> ignore (Test_client.call_tool client ~name:"ping" ())
   | Error e -> Printf.eprintf "Failed: %s\n" e
-```
-
-Compose middleware via functor chaining:
-```ocaml
-module Logged = Mcp_protocol_eio.Middleware.Logging(Mt)
-module Debug_server = Mcp_protocol_eio.Generic_server.Make(Logged)
 ```
 
 ### HTTP Server (Streamable HTTP)
 
 ```ocaml
-open Mcp_protocol
-open Mcp_protocol_http
-
-let echo_tool = Mcp_types.make_tool ~name:"echo" ~description:"Echo" ()
-
-let echo_handler _ctx _name args =
-  let open Tool_arg in
-  let* text = required args "text" string in
-  Ok (Mcp_types.tool_result_of_text ("Echo: " ^ text))
-
 let () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let server =
     Http_server.create ~name:"my-server" ~version:"1.0.0" ()
-    |> Http_server.add_tool echo_tool echo_handler
+    |> Http_server.add_tool
+         (Mcp_types.make_tool ~name:"echo" ~description:"Echo" ())
+         (fun _ctx _name args ->
+           let open Tool_arg in
+           let* text = required args "text" string in
+           Ok (Mcp_types.tool_result_of_text ("Echo: " ^ text)))
   in
   let net = Eio.Stdenv.net env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080) in
@@ -197,8 +221,6 @@ let () =
 ### HTTP Client
 
 ```ocaml
-open Mcp_protocol_http
-
 let () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
@@ -207,175 +229,57 @@ let () =
   match Http_client.initialize client ~client_name:"my-client" ~client_version:"1.0" with
   | Ok result ->
     Printf.printf "Connected to %s\n" result.server_info.name;
-    (* Use list_tools, call_tool, list_resources, etc. *)
     ignore (Http_client.close client)
   | Error e -> Printf.eprintf "Failed: %s\n" e
 ```
 
-### OAuth Discovery + HTTPS (v0.12.0+)
-
-Auto-discover OAuth endpoints and connect over HTTPS:
+### OAuth Discovery + HTTPS
 
 ```ocaml
-open Mcp_protocol_http
-
 let () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let net = Eio.Stdenv.net env in
-
-  (* 1. Discover OAuth server metadata from issuer URL *)
   match Oauth_client.discover ~net ~sw ~issuer:"https://auth.example.com" with
   | Error e -> Printf.eprintf "Discovery failed: %s\n" e
   | Ok metadata ->
-    Printf.printf "Auth endpoint: %s\n" metadata.authorization_endpoint;
-    Printf.printf "Token endpoint: %s\n" metadata.token_endpoint;
-
-    (* 2. Optional: Dynamic client registration *)
-    let client_id = match metadata.registration_endpoint with
-      | Some ep ->
-        let req = Oauth_client.{
-          client_name = "my-mcp-client";
-          redirect_uris = ["http://localhost:9999/callback"];
-          grant_types = ["authorization_code"];
-          response_types = ["code"];
-          token_endpoint_auth_method = "none";
-        } in
-        (match Oauth_client.register_client ~net ~sw
-           ~registration_endpoint:ep ~request:req with
-         | Ok cid -> cid
-         | Error _ -> "pre-registered-client-id")
-      | None -> "pre-registered-client-id"
-    in
-
-    (* 3. Generate PKCE and build authorization URL *)
     let verifier, challenge = Oauth_client.generate_pkce () in
-    let state = Base64.encode_exn ~pad:false
-      (Mirage_crypto_rng.generate 16) in
+    let state = Oauth_client.generate_state () in
     let auth_url = Oauth_client.build_authorization_url
       ~authorization_endpoint:metadata.authorization_endpoint
-      ~client_id ~redirect_uri:"http://localhost:9999/callback"
+      ~client_id:"my-client" ~redirect_uri:"http://localhost:9999/callback"
       ~scopes:["read"] ~state ~code_challenge:challenge () in
     Printf.printf "Visit: %s\n" auth_url;
-
-    (* 4. After user authorizes, exchange code for tokens *)
-    (* let code = <received from redirect callback> in *)
     ignore (Oauth_client.exchange_code ~net ~sw
       ~token_endpoint:metadata.token_endpoint
-      ~client_id ~code:"AUTH_CODE_HERE"
+      ~client_id:"my-client" ~code:"AUTH_CODE"
       ~redirect_uri:"http://localhost:9999/callback"
       ~code_verifier:verifier)
 ```
 
-HTTPS is enabled automatically via `tls-eio` + system CA certificates.
-
-### HTTP Content Negotiation
-
-```ocaml
-open Mcp_protocol
-
-(* Check client capabilities from Accept header *)
-let accept_header = "application/json, text/event-stream" in
-
-if Http_negotiation.accepts_sse accept_header then
-  (* Client supports Server-Sent Events *)
-  print_endline "SSE supported"
-else
-  (* Fall back to regular HTTP *)
-  print_endline "Using stateless HTTP"
-
-(* Negotiate transport mode *)
-let transport = Http_negotiation.negotiate_transport ~accept_header in
-match transport with
-| Http_negotiation.Streamable_http -> "Modern MCP with SSE"
-| Http_negotiation.Sse_only -> "Legacy SSE mode"
-| Http_negotiation.Stateless_http -> "Stateless HTTP"
-```
-
-### Protocol Version Handling
-
-```ocaml
-open Mcp_protocol
-
-(* Check supported versions *)
-let () =
-  assert (Version.is_supported "2025-11-25");
-  assert (Version.is_supported "2024-11-05");
-  assert (not (Version.is_supported "2020-01-01"))
-
-(* Negotiate version *)
-let negotiated = Version.negotiate ~requested:"2025-11-25" in
-(* Returns: Some "2025-11-25" *)
-
-(* Check version features *)
-let features = Version.features_of_version "2025-11-25" in
-(* features.has_sampling = true *)
-(* features.has_elicitation = true *)
-(* features.has_streamable_http = true *)
-```
-
-### Initialize Handshake
-
-```ocaml
-open Mcp_protocol
-
-(* Client sends initialize request *)
-let init_params : Mcp_types.initialize_params = {
-  protocol_version = "2025-11-25";
-  capabilities = {
-    roots = Some (`Assoc [("listChanged", `Bool true)]);
-    sampling = None;
-    elicitation = None;
-    experimental = None;
-  };
-  client_info = { name = "my-client"; version = "1.0.0" };
-}
-
-(* Server responds with capabilities *)
-let init_result : Mcp_types.initialize_result = {
-  protocol_version = "2025-11-25";
-  capabilities = {
-    tools = Some (`Assoc [("listChanged", `Bool true)]);
-    resources = Some (`Assoc [("subscribe", `Bool true)]);
-    prompts = Some (`Assoc []);
-    logging = None;
-    experimental = None;
-  };
-  server_info = { name = "my-server"; version = "1.0.0" };
-  instructions = Some "This server provides code analysis tools.";
-}
-
-(* Serialize to JSON *)
-let json = Mcp_types.initialize_result_to_yojson init_result
-```
-
-## Supported Protocol Versions
-
-| Version | Features |
-|---------|----------|
-| 2024-11-05 | Tools, Resources, Prompts (initial stable) |
-| 2025-03-26 | + Elicitation, Streamable HTTP |
-| 2025-11-25 | + Sampling, Enhanced capabilities (latest) |
-
 ## Error Codes
 
-The SDK provides standard JSON-RPC and MCP-specific error codes:
-
 ```ocaml
-open Mcp_protocol
-
-(* JSON-RPC standard errors *)
+(* JSON-RPC standard *)
 Error_codes.parse_error        (* -32700 *)
 Error_codes.invalid_request    (* -32600 *)
 Error_codes.method_not_found   (* -32601 *)
 Error_codes.invalid_params     (* -32602 *)
 Error_codes.internal_error     (* -32603 *)
 
-(* MCP-specific errors *)
-Error_codes.connection_closed  (* -32001 *)
-Error_codes.request_timeout    (* -32002 *)
-Error_codes.resource_not_found (* -32003 *)
-Error_codes.tool_execution_error (* -32004 *)
+(* MCP-specific *)
+Error_codes.connection_closed      (* -32001 *)
+Error_codes.request_timeout        (* -32002 *)
+Error_codes.resource_not_found     (* -32003 *)
+Error_codes.tool_execution_error   (* -32004 *)
+```
+
+## Testing
+
+33 test suites covering types, serialization, transports, server/client lifecycle, OAuth, SSE, and integration scenarios. `Memory_transport` enables deterministic testing with zero IO.
+
+```bash
+dune runtest
 ```
 
 ## Building from Source
@@ -387,11 +291,11 @@ opam install . --deps-only
 dune build
 ```
 
-## Running Tests
+## Docs
 
-```bash
-dune runtest
-```
+- [Install Checklist](docs/INSTALL-CHECKLIST.md) -- post-install verification
+- [MCP Config Template](docs/MCP-TEMPLATE.md) -- `~/.mcp.json` template for servers
+- [Setup Guide](docs/SETUP.md) -- development environment setup
 
 ## License
 
