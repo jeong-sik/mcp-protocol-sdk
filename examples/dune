@@ -32,3 +32,10 @@
  (package mcp_protocol_http)
  (modules http_auth_server)
  (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson unix))
+
+(executable
+ (name conformance_server)
+ (public_name mcp_conformance_server)
+ (package mcp_protocol_http)
+ (modules conformance_server)
+ (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson))
