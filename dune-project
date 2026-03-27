@@ -2,7 +2,7 @@
 
 (name mcp_protocol)
 
-(version 1.1.0)
+(version 1.2.0)
 
 (generate_opam_files true)
 
