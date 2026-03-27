@@ -170,12 +170,9 @@ let make_prompt_get_response ?(id = 1) () =
       ("messages", `List [
         `Assoc [
           ("role", `String "assistant");
-          ("content", `List [
-            `String "PromptText";
-            `Assoc [
-              ("type_", `String "text");
-              ("text", `String "Hello, world!");
-            ];
+          ("content", `Assoc [
+            ("type", `String "text");
+            ("text", `String "Hello, world!");
           ]);
         ];
       ]);

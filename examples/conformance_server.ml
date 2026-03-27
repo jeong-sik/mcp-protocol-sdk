@@ -101,12 +101,18 @@ let () =
            Ok Mcp_types.{
              content = [
                TextContent { type_ = "text";
-                 text = "Here is a text message and an image:";
+                 text = "Here is a text message, an image, and a resource:";
                  annotations = None };
                ImageContent { type_ = "image";
                  data = base64_1px_png;
                  mime_type = "image/png";
                  annotations = None };
+               make_resource_content {
+                 uri = "test://embedded";
+                 mime_type = Some "text/plain";
+                 text = Some "Embedded resource in mixed content.";
+                 blob = None;
+               };
              ];
              is_error = None;
              structured_content = None;

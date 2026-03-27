@@ -379,13 +379,13 @@ let test_prompts_get () =
     begin match get_field "messages" result with
     | Some (`List (first :: _)) ->
       begin match get_field "content" first with
-      | Some (`List [_tag; payload]) ->
-        begin match get_string "text" payload with
+      | Some (`Assoc _ as obj) ->
+        begin match get_string "text" obj with
         | Some t ->
           Alcotest.(check bool) "contains name" true
             (let len = String.length t in len >= 7 &&
               let sub = String.sub t (len - 7) 7 in sub = "Vincent")
-        | None -> Alcotest.fail "No text in payload"
+        | None -> Alcotest.fail "No text in content"
         end
       | Some other ->
         Alcotest.fail (Printf.sprintf "Unexpected content shape: %s"
