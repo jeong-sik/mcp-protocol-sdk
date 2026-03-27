@@ -12,6 +12,14 @@ A pure OCaml 5.x implementation of the [Model Context Protocol](https://modelcon
 | `mcp_protocol_eio` | Stdio transport, functor server/client | `Generic_server`, `Generic_client`, `Stdio_transport`, `Memory_transport`, `Middleware` |
 | `mcp_protocol_http` | Streamable HTTP, SSE, OAuth 2.1 | `Http_server`, `Http_client`, `Oauth_client`, `Auth_middleware` |
 
+## Project Status
+
+- Stable release line: `1.0.x`
+- Roadmap: [ROADMAP.md](ROADMAP.md)
+- Release policy: [docs/RELEASE-POLICY.md](docs/RELEASE-POLICY.md)
+- Contribution guide and issue labels: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Conformance guide: [conformance/README.md](conformance/README.md)
+
 ## Feature Matrix
 
 ### Protocol Versions
@@ -141,9 +149,9 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 0.15.0))
- (mcp_protocol_eio (>= 0.15.0))   ; stdio transport + functor server/client
- (mcp_protocol_http (>= 0.15.0))) ; HTTP transport + OAuth
+ (mcp_protocol (>= 1.0.1))
+ (mcp_protocol_eio (>= 1.0.1))   ; stdio transport + functor server/client
+ (mcp_protocol_http (>= 1.0.1))) ; HTTP transport + OAuth
 ```
 
 ## Usage
@@ -280,6 +288,13 @@ Error_codes.tool_execution_error   (* -32004 *)
 
 ```bash
 dune runtest
+bash scripts/check-release-metadata.sh
+```
+
+Official conformance can be exercised against the bundled example server:
+
+```bash
+bash scripts/run-conformance.sh
 ```
 
 ## Building from Source
@@ -295,6 +310,10 @@ dune build
 
 - [Install Checklist](docs/INSTALL-CHECKLIST.md) -- post-install verification
 - [MCP Config Template](docs/MCP-TEMPLATE.md) -- `~/.mcp.json` template for servers
+- [Conformance Guide](conformance/README.md) -- official conformance harness flow
+- [Contributing](CONTRIBUTING.md) -- issue labels, local checks, release checklist
+- [Release Policy](docs/RELEASE-POLICY.md) -- versioning and release metadata rules
+- [Roadmap](ROADMAP.md) -- Tier 1 quality work and follow-up milestones
 - [Setup Guide](docs/SETUP.md) -- development environment setup
 
 ## License

@@ -1,0 +1,17 @@
+name: Question
+description: Ask for clarification about SDK behavior or intended usage
+title: "[question] "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What do you need clarified?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Add code, transport details, or protocol traces if helpful.
