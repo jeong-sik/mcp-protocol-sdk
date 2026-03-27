@@ -266,6 +266,16 @@ let ping t =
   | Error e -> Error e
   | Ok _ -> Ok ()
 
+(* ── pagination helper ────────────────────────────── *)
+
+let list_all_pages t ~method_ ~field ~of_yojson =
+  Pagination.collect_pages (fun cursor ->
+    let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
+    match send_request t ~method_ ?params () with
+    | Error e -> Error e
+    | Ok result ->
+      Handler.parse_paginated_list_field field of_yojson result)
+
 (* ── tools ────────────────────────────────────────── *)
 
 let list_tools ?cursor t =
@@ -280,12 +290,8 @@ let list_tools ?cursor t =
       (Handler.parse_paginated_list_field "tools" Mcp_types.tool_of_yojson result)
 
 let list_tools_all t =
-  Pagination.collect_pages (fun cursor ->
-    let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
-    match send_request t ~method_:Notifications.tools_list ?params () with
-    | Error e -> Error e
-    | Ok result ->
-      Handler.parse_paginated_list_field "tools" Mcp_types.tool_of_yojson result)
+  list_all_pages t ~method_:Notifications.tools_list
+    ~field:"tools" ~of_yojson:Mcp_types.tool_of_yojson
 
 let call_tool t ~name ?arguments () =
   let params_fields = [("name", `String name)] in
@@ -312,12 +318,8 @@ let list_resources ?cursor t =
       (Handler.parse_paginated_list_field "resources" Mcp_types.resource_of_yojson result)
 
 let list_resources_all t =
-  Pagination.collect_pages (fun cursor ->
-    let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
-    match send_request t ~method_:Notifications.resources_list ?params () with
-    | Error e -> Error e
-    | Ok result ->
-      Handler.parse_paginated_list_field "resources" Mcp_types.resource_of_yojson result)
+  list_all_pages t ~method_:Notifications.resources_list
+    ~field:"resources" ~of_yojson:Mcp_types.resource_of_yojson
 
 let read_resource t ~uri =
   let params = `Assoc [("uri", `String uri)] in
@@ -361,12 +363,8 @@ let list_prompts ?cursor t =
       (Handler.parse_paginated_list_field "prompts" Mcp_types.prompt_of_yojson result)
 
 let list_prompts_all t =
-  Pagination.collect_pages (fun cursor ->
-    let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
-    match send_request t ~method_:Notifications.prompts_list ?params () with
-    | Error e -> Error e
-    | Ok result ->
-      Handler.parse_paginated_list_field "prompts" Mcp_types.prompt_of_yojson result)
+  list_all_pages t ~method_:Notifications.prompts_list
+    ~field:"prompts" ~of_yojson:Mcp_types.prompt_of_yojson
 
 let get_prompt t ~name ?arguments () =
   let params_fields = [("name", `String name)] in

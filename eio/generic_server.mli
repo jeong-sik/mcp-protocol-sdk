@@ -43,7 +43,7 @@ module Make (T : Mcp_protocol.Transport.S) : sig
 
   type t
 
-  val create : name:string -> version:string -> ?instructions:string -> unit -> t
+  val create : name:string -> version:string -> ?instructions:string -> ?enable_logging:bool -> unit -> t
   val add_tool : Mcp_types.tool -> tool_handler -> t -> t
   val add_resource : Mcp_types.resource -> resource_handler -> t -> t
   val add_resource_template : Mcp_types.resource_template -> resource_handler -> t -> t
