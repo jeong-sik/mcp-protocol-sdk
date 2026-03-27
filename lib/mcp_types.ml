@@ -455,22 +455,110 @@ type prompt_content =
   | PromptText of { type_: string; text: string }
   | PromptImage of { type_: string; data: string; mime_type: string }
   | PromptResource of { type_: string; resource: embedded_resource }
-[@@deriving yojson]
+
+let prompt_content_to_yojson = function
+  | PromptText { type_; text } ->
+    `Assoc [("type", `String type_); ("text", `String text)]
+  | PromptImage { type_; data; mime_type } ->
+    `Assoc [("type", `String type_); ("data", `String data); ("mimeType", `String mime_type)]
+  | PromptResource { type_; resource } ->
+    `Assoc [("type", `String type_); ("resource", embedded_resource_to_yojson resource)]
+
+let prompt_content_of_yojson = function
+  | `Assoc fields -> begin
+    match List.assoc_opt "type" fields with
+    | Some (`String "text") ->
+      let text = match List.assoc_opt "text" fields with
+        | Some (`String s) -> Ok s | _ -> Error "PromptText: missing 'text'"
+      in
+      Result.map (fun text -> PromptText { type_ = "text"; text }) text
+    | Some (`String "image") ->
+      let data = match List.assoc_opt "data" fields with
+        | Some (`String s) -> Ok s | _ -> Error "PromptImage: missing 'data'"
+      in
+      let mime_type = match List.assoc_opt "mimeType" fields with
+        | Some (`String s) -> Ok s
+        | _ -> match List.assoc_opt "mime_type" fields with
+          | Some (`String s) -> Ok s | _ -> Error "PromptImage: missing 'mimeType'"
+      in
+      Result.bind data (fun data ->
+        Result.map (fun mime_type ->
+          PromptImage { type_ = "image"; data; mime_type }) mime_type)
+    | Some (`String "resource") ->
+      let resource = match List.assoc_opt "resource" fields with
+        | Some j -> embedded_resource_of_yojson j
+        | None -> Error "PromptResource: missing 'resource'"
+      in
+      Result.map (fun resource ->
+        PromptResource { type_ = "resource"; resource }) resource
+    | Some (`String t) -> Error ("prompt_content: unknown type " ^ t)
+    | _ -> Error "prompt_content: missing 'type'"
+    end
+  | _ -> Error "prompt_content: expected object"
 
 (** Prompt message *)
 type prompt_message = {
   role: role;
   content: prompt_content;
 }
-[@@deriving yojson]
+
+let prompt_message_to_yojson (m : prompt_message) =
+  `Assoc [
+    ("role", role_to_yojson m.role);
+    ("content", prompt_content_to_yojson m.content);
+  ]
+
+let prompt_message_of_yojson = function
+  | `Assoc fields ->
+    let role = match List.assoc_opt "role" fields with
+      | Some j -> role_of_yojson j
+      | None -> Error "prompt_message: missing 'role'"
+    in
+    let content = match List.assoc_opt "content" fields with
+      | Some j -> prompt_content_of_yojson j
+      | None -> Error "prompt_message: missing 'content'"
+    in
+    Result.bind role (fun role ->
+      Result.map (fun content -> { role; content }) content)
+  | _ -> Error "prompt_message: expected object"
 
 (** Prompt result *)
 type prompt_result = {
-  description: string option; [@default None]
+  description: string option;
   messages: prompt_message list;
-  _meta: Yojson.Safe.t option; [@default None] [@key "_meta"]
+  _meta: Yojson.Safe.t option;
 }
-[@@deriving yojson]
+
+let prompt_result_to_yojson (r : prompt_result) =
+  let fields = [("messages", `List (List.map prompt_message_to_yojson r.messages))] in
+  let fields = match r.description with
+    | Some d -> ("description", `String d) :: fields | None -> fields
+  in
+  let fields = match r._meta with
+    | Some m -> ("_meta", m) :: fields | None -> fields
+  in
+  `Assoc fields
+
+let prompt_result_of_yojson = function
+  | `Assoc fields ->
+    let messages = match List.assoc_opt "messages" fields with
+      | Some (`List items) ->
+        List.fold_left (fun acc j ->
+          match acc, prompt_message_of_yojson j with
+          | Ok acc, Ok msg -> Ok (msg :: acc)
+          | Error e, _ | _, Error e -> Error e
+        ) (Ok []) items
+        |> Result.map List.rev
+      | _ -> Error "prompt_result: missing 'messages'"
+    in
+    let description = match List.assoc_opt "description" fields with
+      | Some (`String s) -> Some s | _ -> None
+    in
+    let _meta = match List.assoc_opt "_meta" fields with
+      | Some `Null -> None | Some j -> Some j | None -> None
+    in
+    Result.map (fun messages -> { description; messages; _meta }) messages
+  | _ -> Error "prompt_result: expected object"
 
 (** {2 Roots} *)
 
