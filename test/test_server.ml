@@ -120,6 +120,7 @@ let prompt_handler _ctx _name args =
       role = User;
       content = PromptText { type_ = "text"; text = Printf.sprintf "Hello, %s" who };
     }];
+    _meta = None;
   }
 
 (* ── completion setup ─────────────────────────────────── *)

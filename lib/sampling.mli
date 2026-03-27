@@ -69,11 +69,17 @@ val sampling_tool_of_yojson : Yojson.Safe.t -> (sampling_tool, string) result
 
 (** {2 Create Message} *)
 
+(** Which context the sampling host should include with the request. *)
+type include_context = None_ | ThisServer | AllServers
+
+val include_context_to_yojson : include_context -> Yojson.Safe.t
+val include_context_of_yojson : Yojson.Safe.t -> (include_context, string) result
+
 type create_message_params = {
   messages: sampling_message list;
   model_preferences: model_preferences option;
   system_prompt: string option;
-  include_context: string option;
+  include_context: include_context option;
   temperature: float option;
   max_tokens: int;
   stop_sequences: string list option;

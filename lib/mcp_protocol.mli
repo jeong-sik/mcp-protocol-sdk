@@ -22,6 +22,7 @@ module Auth = Auth
 module Protocol = Protocol
 module Resources = Resources
 module Result_extra = Result_extra
+module Pagination = Pagination
 
 (** {1 Convenience Re-exports} *)
 

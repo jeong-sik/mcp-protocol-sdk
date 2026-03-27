@@ -189,12 +189,27 @@ let sampling_tool_of_yojson = function
      | _ -> Error "sampling_tool: missing 'name' field")
   | _ -> Error "sampling_tool must be an object"
 
+(** Which context the sampling host should include with the request. *)
+type include_context = None_ | ThisServer | AllServers
+
+let include_context_to_yojson = function
+  | None_ -> `String "none"
+  | ThisServer -> `String "thisServer"
+  | AllServers -> `String "allServers"
+
+let include_context_of_yojson = function
+  | `String "none" -> Ok None_
+  | `String "thisServer" -> Ok ThisServer
+  | `String "allServers" -> Ok AllServers
+  | `String s -> Error (Printf.sprintf "include_context: unknown value %S" s)
+  | _ -> Error "include_context must be a string"
+
 (** Parameters for sampling/createMessage request. *)
 type create_message_params = {
   messages: sampling_message list;
   model_preferences: model_preferences option;
   system_prompt: string option;
-  include_context: string option;  (** "none" | "thisServer" | "allServers" *)
+  include_context: include_context option;
   temperature: float option;
   max_tokens: int;
   stop_sequences: string list option;
@@ -222,7 +237,7 @@ let create_message_params_to_yojson p =
     | None -> fields
   in
   let fields = match p.include_context with
-    | Some ic -> ("includeContext", `String ic) :: fields
+    | Some ic -> ("includeContext", include_context_to_yojson ic) :: fields
     | None -> fields
   in
   let fields = match p.system_prompt with
@@ -268,7 +283,8 @@ let create_message_params_of_yojson = function
          system_prompt = (match List.assoc_opt "systemPrompt" fields with
            | Some (`String s) -> Some s | _ -> None);
          include_context = (match List.assoc_opt "includeContext" fields with
-           | Some (`String s) -> Some s | _ -> None);
+           | Some j -> (match include_context_of_yojson j with Ok ic -> Some ic | Error _ -> None)
+           | None -> None);
          temperature = (match List.assoc_opt "temperature" fields with
            | Some (`Float f) -> Some f | Some (`Int i) -> Some (float_of_int i) | _ -> None);
          max_tokens;

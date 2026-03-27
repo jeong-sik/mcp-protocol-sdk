@@ -65,6 +65,7 @@ let hello_prompt_handler _ctx _name _args =
       role = User;
       content = PromptText { type_ = "text"; text = "Hello!" };
     }];
+    _meta = None;
   }
 
 let make_server () =

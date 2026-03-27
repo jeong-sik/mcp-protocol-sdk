@@ -209,6 +209,7 @@ val prompt_message_of_yojson : Yojson.Safe.t -> (prompt_message, string) result
 type prompt_result = {
   description: string option;
   messages: prompt_message list;
+  _meta: Yojson.Safe.t option;
 }
 
 val prompt_result_to_yojson : prompt_result -> Yojson.Safe.t

@@ -83,6 +83,9 @@ module Resources = Resources
 (** Result combinators for list traversal *)
 module Result_extra = Result_extra
 
+(** Cursor-based pagination with loop detection *)
+module Pagination = Pagination
+
 (** {1 Convenience Re-exports} *)
 
 (** Protocol version string *)

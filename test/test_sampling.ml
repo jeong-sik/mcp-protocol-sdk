@@ -100,7 +100,7 @@ let test_create_message_params_roundtrip () =
     ];
     model_preferences = None;
     system_prompt = Some "You are helpful.";
-    include_context = Some "thisServer";
+    include_context = Some Sampling.ThisServer;
     temperature = Some 0.7;
     max_tokens = 1024;
     stop_sequences = Some ["END"];
@@ -114,7 +114,7 @@ let test_create_message_params_roundtrip () =
   | Ok p' ->
     Alcotest.(check int) "messages" 1 (List.length p'.messages);
     Alcotest.(check (option string)) "system_prompt" (Some "You are helpful.") p'.system_prompt;
-    Alcotest.(check (option string)) "include_context" (Some "thisServer") p'.include_context;
+    Alcotest.(check bool) "include_context" true (p'.include_context = Some Sampling.ThisServer);
     Alcotest.(check int) "max_tokens" 1024 p'.max_tokens;
     Alcotest.(check (option (float 0.01))) "temperature" (Some 0.7) p'.temperature
   | Error e -> Alcotest.fail e
