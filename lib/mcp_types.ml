@@ -424,7 +424,7 @@ type resource_template = {
 (** Resource contents *)
 type resource_contents = {
   uri: string;
-  mime_type: string option; [@default None]
+  mime_type: string option; [@default None] [@key "mimeType"]
   text: string option; [@default None]
   blob: string option; [@default None]
 }
