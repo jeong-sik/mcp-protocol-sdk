@@ -69,6 +69,29 @@ type authorization_server_metadata = {
 val authorization_server_metadata_to_yojson : authorization_server_metadata -> Yojson.Safe.t
 val authorization_server_metadata_of_yojson : Yojson.Safe.t -> (authorization_server_metadata, string) result
 
+(** {2 Client ID Metadata Document (MCP spec 2025-11-25)}
+
+    An alternative to Dynamic Client Registration (RFC 7591).
+    Clients publish a metadata document at a well-known URL
+    so servers can fetch client information without registration. *)
+
+type client_id_metadata_document = {
+  client_id: string;
+  client_name: string option;
+  client_uri: string option;
+  logo_uri: string option;
+  tos_uri: string option;
+  policy_uri: string option;
+  redirect_uris: string list;
+  grant_types: string list;
+  token_endpoint_auth_method: string;
+  scope: string option;
+  contacts: string list;
+}
+
+val client_id_metadata_document_to_yojson : client_id_metadata_document -> Yojson.Safe.t
+val client_id_metadata_document_of_yojson : Yojson.Safe.t -> (client_id_metadata_document, string) result
+
 (** {2 Error Response} *)
 
 (** OAuth error response (RFC 6749 Section 5.2). *)

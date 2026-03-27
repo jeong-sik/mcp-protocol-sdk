@@ -55,6 +55,26 @@ type authorization_server_metadata = {
 }
 [@@deriving yojson]
 
+(** {2 Client ID Metadata Document (MCP spec 2025-11-25)}
+
+    An alternative to Dynamic Client Registration (RFC 7591).
+    Clients publish a metadata document at a well-known URL. *)
+
+type client_id_metadata_document = {
+  client_id: string; [@key "client_id"]
+  client_name: string option; [@default None] [@key "client_name"]
+  client_uri: string option; [@default None] [@key "client_uri"]
+  logo_uri: string option; [@default None] [@key "logo_uri"]
+  tos_uri: string option; [@default None] [@key "tos_uri"]
+  policy_uri: string option; [@default None] [@key "policy_uri"]
+  redirect_uris: string list; [@default []] [@key "redirect_uris"]
+  grant_types: string list; [@default ["authorization_code"]] [@key "grant_types"]
+  token_endpoint_auth_method: string; [@default "none"] [@key "token_endpoint_auth_method"]
+  scope: string option; [@default None]
+  contacts: string list; [@default []]
+}
+[@@deriving yojson]
+
 (** {2 Error Response (RFC 6749 Section 5.2)} *)
 
 type oauth_error = {
