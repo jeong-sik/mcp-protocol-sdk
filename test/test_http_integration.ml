@@ -55,6 +55,7 @@ let greet_resource =
   Mcp_types.{
     uri = "test://greet";
     name = "greet";
+    title = None;
     description = Some "A greeting resource";
     mime_type = Some "text/plain";
     icon = None;
@@ -72,6 +73,7 @@ let status_resource =
   Mcp_types.{
     uri = "test://status";
     name = "status";
+    title = None;
     description = Some "A status resource";
     mime_type = Some "application/json";
     icon = None;
@@ -88,6 +90,7 @@ let status_handler _ctx uri =
 let hello_prompt =
   Mcp_types.{
     name = "hello";
+    title = None;
     description = Some "A hello prompt";
     arguments = Some [Mcp_types.{
       name = "name";

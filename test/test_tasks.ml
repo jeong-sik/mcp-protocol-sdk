@@ -212,6 +212,8 @@ let test_version_features_has_tasks () =
   Alcotest.(check bool) "base no tasks" false f_base.has_tasks;
   let f_mar = Version.features_of_version "2025-03-26" in
   Alcotest.(check bool) "2025-03-26 no tasks" false f_mar.has_tasks;
+  let f_jun = Version.features_of_version "2025-06-18" in
+  Alcotest.(check bool) "2025-06-18 no tasks" false f_jun.has_tasks;
   let f_latest = Version.features_of_version "2025-11-25" in
   Alcotest.(check bool) "2025-11-25 has tasks" true f_latest.has_tasks
 

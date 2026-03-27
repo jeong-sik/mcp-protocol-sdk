@@ -110,7 +110,7 @@ let resource ~uri name ?description ?mime_type handler s =
 
 let resource_template ~uri_template name ?description ?mime_type handler s =
   let t : Mcp_types.resource_template = {
-    uri_template; name; description; mime_type; icon = None;
+    uri_template; name; title = None; description; mime_type; icon = None;
   } in
   add_resource_template t handler s
 

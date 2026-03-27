@@ -15,16 +15,19 @@
 type protocol_version =
   | V_2024_11_05
   | V_2025_03_26
+  | V_2025_06_18
   | V_2025_11_25
 
 let protocol_version_to_string = function
   | V_2024_11_05 -> "2024-11-05"
   | V_2025_03_26 -> "2025-03-26"
+  | V_2025_06_18 -> "2025-06-18"
   | V_2025_11_25 -> "2025-11-25"
 
 let protocol_version_of_string = function
   | "2024-11-05" -> Some V_2024_11_05
   | "2025-03-26" -> Some V_2025_03_26
+  | "2025-06-18" -> Some V_2025_06_18
   | "2025-11-25" -> Some V_2025_11_25
   | _ -> None
 
@@ -393,6 +396,7 @@ let tool_result_of_yojson = function
 type resource = {
   uri: string;
   name: string;
+  title: string option; [@default None]
   description: string option; [@default None]
   mime_type: string option; [@default None]
   icon: string option; [@default None]
@@ -403,6 +407,7 @@ type resource = {
 type resource_template = {
   uri_template: string; [@key "uriTemplate"]
   name: string;
+  title: string option; [@default None]
   description: string option; [@default None]
   mime_type: string option; [@default None]
   icon: string option; [@default None]
@@ -431,6 +436,7 @@ type prompt_argument = {
 (** Prompt definition - a reusable prompt template *)
 type prompt = {
   name: string;
+  title: string option; [@default None]
   description: string option; [@default None]
   arguments: prompt_argument list option; [@default None]
   icon: string option; [@default None]
@@ -696,12 +702,12 @@ let make_tool ~name ?description ?title ?annotations ?icon
   { name; description; input_schema; output_schema; title; annotations; icon; execution }
 
 (** Create a resource definition *)
-let make_resource ~uri ~name ?description ?mime_type ?icon () =
-  { uri; name; description; mime_type; icon }
+let make_resource ~uri ~name ?title ?description ?mime_type ?icon () =
+  { uri; name; title; description; mime_type; icon }
 
 (** Create a prompt definition *)
-let make_prompt ~name ?description ?arguments ?icon () =
-  { name; description; arguments; icon }
+let make_prompt ~name ?title ?description ?arguments ?icon () =
+  { name; title; description; arguments; icon }
 
 (** {2 Tool Result Helpers} *)
 

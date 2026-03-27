@@ -18,6 +18,7 @@ let echo_tool : Mcp_types.tool = {
 let test_resource : Mcp_types.resource = {
   uri = "file:///hello.txt";
   name = "hello.txt";
+  title = None;
   description = Some "A test file";
   mime_type = Some "text/plain";
   icon = None;
@@ -25,6 +26,7 @@ let test_resource : Mcp_types.resource = {
 
 let greet_prompt : Mcp_types.prompt = {
   name = "greet";
+  title = None;
   description = Some "Greeting prompt";
   arguments = Some [{ name = "name"; description = None; required = Some true }];
   icon = None;

@@ -3,11 +3,13 @@ open Mcp_protocol
 (* --- supported_versions --- *)
 
 let test_supported_versions_list () =
-  Alcotest.(check int) "3 versions" 3 (List.length Version.supported_versions);
+  Alcotest.(check int) "4 versions" 4 (List.length Version.supported_versions);
   Alcotest.(check bool) "contains 2024-11-05"
     true (List.mem "2024-11-05" Version.supported_versions);
   Alcotest.(check bool) "contains 2025-03-26"
     true (List.mem "2025-03-26" Version.supported_versions);
+  Alcotest.(check bool) "contains 2025-06-18"
+    true (List.mem "2025-06-18" Version.supported_versions);
   Alcotest.(check bool) "contains 2025-11-25"
     true (List.mem "2025-11-25" Version.supported_versions)
 
@@ -77,23 +79,41 @@ let test_features_base () =
   Alcotest.(check bool) "no sampling" false f.has_sampling;
   Alcotest.(check bool) "no elicitation" false f.has_elicitation;
   Alcotest.(check bool) "no streamable" false f.has_streamable_http;
+  Alcotest.(check bool) "no structured_output" false f.has_structured_output;
+  Alcotest.(check bool) "no resource_links" false f.has_resource_links;
   Alcotest.(check bool) "no tasks" false f.has_tasks;
-  Alcotest.(check bool) "no icons" false f.has_icons
+  Alcotest.(check bool) "no icons" false f.has_icons;
+  Alcotest.(check bool) "no extensions" false f.has_extensions
 
 let test_features_2025_03_26 () =
   let f = Version.features_of_version "2025-03-26" in
-  Alcotest.(check bool) "has_elicitation" true f.has_elicitation;
   Alcotest.(check bool) "has_streamable" true f.has_streamable_http;
+  Alcotest.(check bool) "no elicitation" false f.has_elicitation;
   Alcotest.(check bool) "no sampling" false f.has_sampling;
+  Alcotest.(check bool) "no structured_output" false f.has_structured_output;
   Alcotest.(check bool) "no icons" false f.has_icons
+
+let test_features_2025_06_18 () =
+  let f = Version.features_of_version "2025-06-18" in
+  Alcotest.(check bool) "has_streamable" true f.has_streamable_http;
+  Alcotest.(check bool) "has_elicitation" true f.has_elicitation;
+  Alcotest.(check bool) "has_structured_output" true f.has_structured_output;
+  Alcotest.(check bool) "has_resource_links" true f.has_resource_links;
+  Alcotest.(check bool) "no sampling" false f.has_sampling;
+  Alcotest.(check bool) "no tasks" false f.has_tasks;
+  Alcotest.(check bool) "no icons" false f.has_icons;
+  Alcotest.(check bool) "no extensions" false f.has_extensions
 
 let test_features_latest () =
   let f = Version.features_of_version "2025-11-25" in
   Alcotest.(check bool) "has_sampling" true f.has_sampling;
   Alcotest.(check bool) "has_elicitation" true f.has_elicitation;
   Alcotest.(check bool) "has_streamable" true f.has_streamable_http;
+  Alcotest.(check bool) "has_structured_output" true f.has_structured_output;
+  Alcotest.(check bool) "has_resource_links" true f.has_resource_links;
   Alcotest.(check bool) "has_tasks" true f.has_tasks;
-  Alcotest.(check bool) "has_icons" true f.has_icons
+  Alcotest.(check bool) "has_icons" true f.has_icons;
+  Alcotest.(check bool) "has_extensions" true f.has_extensions
 
 (* --- Suite --- *)
 
@@ -122,6 +142,7 @@ let () =
     "features", [
       Alcotest.test_case "base (2024-11-05)" `Quick test_features_base;
       Alcotest.test_case "2025-03-26" `Quick test_features_2025_03_26;
+      Alcotest.test_case "2025-06-18" `Quick test_features_2025_06_18;
       Alcotest.test_case "latest" `Quick test_features_latest;
     ];
   ]
