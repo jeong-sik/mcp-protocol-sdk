@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-03-27
+
+### Added
+- `Handler.create`, `Server.create`, and `Http_server.create` accept `?enable_logging:bool`
+  so servers can omit the `logging` capability from `initialize` responses when needed.
+
+### Changed
+- Version line normalized to `1.0.1` to follow the `v1.0.0` release tag line.
+
 ## [0.16.0] - 2026-03-27
 
 ### Added
