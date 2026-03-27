@@ -63,7 +63,13 @@ type t
 
 (** Create a new server with the given name and version.
     @param instructions Optional server instructions for clients. *)
-val create : name:string -> version:string -> ?instructions:string -> unit -> t
+val create :
+  name:string ->
+  version:string ->
+  ?instructions:string ->
+  ?enable_logging:bool ->
+  unit ->
+  t
 
 (** Register a tool and its handler. *)
 val add_tool : Mcp_types.tool -> tool_handler -> t -> t

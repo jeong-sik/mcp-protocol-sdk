@@ -219,6 +219,29 @@ let test_initialize_has_logging_cap () =
     end
   | None -> Alcotest.fail "Expected result"
 
+let test_initialize_without_logging_cap () =
+  let server =
+    Mcp_protocol_eio.Server.create
+      ~name:"no-log-server"
+      ~version:"1.0.0"
+      ~enable_logging:false
+      ()
+    |> Mcp_protocol_eio.Server.add_tool echo_tool echo_handler
+  in
+  let responses = run_server_with server
+    [{|{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}|}]
+  in
+  let json = List.hd responses in
+  match get_result json with
+  | Some result ->
+    begin match get_field "capabilities" result with
+    | Some caps ->
+      Alcotest.(check bool) "logging omitted" true
+        (get_field "logging" caps = None)
+    | None -> Alcotest.fail "Missing capabilities"
+    end
+  | None -> Alcotest.fail "Expected result"
+
 (* ── ping tests ───────────────────────────────────────── *)
 
 let test_ping () =
@@ -508,6 +531,7 @@ let () =
       Alcotest.test_case "version negotiation" `Quick test_initialize_version_negotiation;
       Alcotest.test_case "capabilities reflect tools" `Quick test_initialize_capabilities_reflect_tools;
       Alcotest.test_case "has logging capability" `Quick test_initialize_has_logging_cap;
+      Alcotest.test_case "can disable logging capability" `Quick test_initialize_without_logging_cap;
     ];
     "ping", [
       Alcotest.test_case "responds" `Quick test_ping;
