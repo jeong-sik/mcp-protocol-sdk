@@ -11,6 +11,9 @@ type t = {
   log_level : Logging.log_level Atomic.t;
   mutable sleep : (float -> unit) option;
   auth : Auth_middleware.config option;
+  next_request_id : int Atomic.t;
+  pending_requests : (int, Yojson.Safe.t Eio.Promise.u) Hashtbl.t;
+  pending_mutex : Eio.Mutex.t;
 }
 
 let create ~name ~version ?instructions ?enable_logging ?auth () = {
@@ -22,6 +25,9 @@ let create ~name ~version ?instructions ?enable_logging ?auth () = {
   log_level = Atomic.make Logging.Warning;
   sleep = None;
   auth;
+  next_request_id = Atomic.make 1;
+  pending_requests = Hashtbl.create 8;
+  pending_mutex = Eio.Mutex.create ();
 }
 
 let add_tool tool handler s =
@@ -131,11 +137,11 @@ let is_initialize_request json =
 (** Build a handler context.  When [request_stream] is provided,
     notifications are sent to that per-request SSE stream instead of
     the global broadcaster (used for POST-response SSE mode). *)
-let make_context ?(request_stream : Sse.event Eio.Stream.t option) s
+let make_context ?(request_stream : Sse.event option Eio.Stream.t option) s
     : Mcp_protocol_eio.Handler.context =
   let send_event evt =
     match request_stream with
-    | Some stream -> Eio.Stream.add stream evt; Ok ()
+    | Some stream -> Eio.Stream.add stream (Some evt); Ok ()
     | None -> Sse.Broadcaster.broadcast s.broadcaster evt; Ok ()
   in
   let send_notification ~method_ ~params =
@@ -165,14 +171,56 @@ let make_context ?(request_stream : Sse.event Eio.Stream.t option) s
       ~method_:Notifications.progress
       ~params:(Some (Mcp_result.progress_to_yojson p))
   in
-  let request_sampling _params =
-    Error "sampling/createMessage not supported over HTTP transport"
+  (* Send a JSON-RPC request via SSE and wait for the client's POST response *)
+  let server_request ~method_ ~params =
+    let id_int = Atomic.fetch_and_add s.next_request_id 1 in
+    let id = Jsonrpc.Int id_int in
+    let msg = Jsonrpc.make_request ~id ~method_ ~params () in
+    let json_str = Yojson.Safe.to_string (Jsonrpc.message_to_yojson msg) in
+    let event_id = Http_session.next_event_id s.session in
+    let evt = Sse.event "message" json_str |> Sse.with_id event_id in
+    let promise, resolver = Eio.Promise.create () in
+    Eio.Mutex.use_rw ~protect:true s.pending_mutex (fun () ->
+      Hashtbl.add s.pending_requests id_int resolver);
+    ignore (send_event evt);
+    let result = Eio.Promise.await promise in
+    Eio.Mutex.use_rw ~protect:true s.pending_mutex (fun () ->
+      Hashtbl.remove s.pending_requests id_int);
+    Ok result
+  in
+  let request_sampling params =
+    let json = Sampling.create_message_params_to_yojson params in
+    match server_request ~method_:Notifications.sampling_create_message ~params:json with
+    | Error e -> Error e
+    | Ok result -> Sampling.create_message_result_of_yojson result
   in
   let request_roots_list () =
-    Error "roots/list not supported over HTTP transport"
+    match server_request ~method_:Notifications.roots_list ~params:(`Assoc []) with
+    | Error e -> Error e
+    | Ok result ->
+      begin match result with
+      | `Assoc fields ->
+        begin match List.assoc_opt "roots" fields with
+        | Some (`List items) ->
+          List.fold_left (fun acc j ->
+            match acc with
+            | Error _ -> acc
+            | Ok lst ->
+              match Mcp_types.root_of_yojson j with
+              | Ok r -> Ok (r :: lst)
+              | Error e -> Error (Printf.sprintf "Failed to parse root: %s" e)
+          ) (Ok []) items
+          |> Result.map List.rev
+        | _ -> Error "Missing 'roots' in response"
+        end
+      | _ -> Error "Invalid roots/list response"
+      end
   in
-  let request_elicitation _params =
-    Error "elicitation/create not supported over HTTP transport"
+  let request_elicitation params =
+    let json = Mcp_types.elicitation_params_to_yojson params in
+    match server_request ~method_:Notifications.elicitation_create ~params:json with
+    | Error e -> Error e
+    | Ok result -> Mcp_types.elicitation_result_of_yojson result
   in
   { send_notification; send_log; send_progress;
     request_sampling; request_roots_list; request_elicitation }
@@ -235,9 +283,9 @@ let dispatch_jsonrpc s json is_init : Cohttp_eio.Server.response =
        respond_empty ~status:`Accepted s.session)
 
 (** Dispatch via POST-response SSE streaming.
-    Notifications (progress, log) and the final result are all sent as SSE events
-    in the HTTP response body.  This is the MCP Streamable HTTP pattern for
-    methods that produce interim notifications during execution. *)
+    Notifications and the final result are sent as SSE events in the response body.
+    Handler runs in a concurrent fiber so SSE body can stream while the handler
+    blocks on server-to-client requests (sampling, elicitation). *)
 let dispatch_jsonrpc_sse s json is_init : Cohttp_eio.Server.response =
   let msg = Jsonrpc.message_of_yojson json in
   match msg with
@@ -248,29 +296,8 @@ let dispatch_jsonrpc_sse s json is_init : Cohttp_eio.Server.response =
     respond_json_with_session s.session ~status:`OK
       (Jsonrpc.message_to_yojson err)
   | Ok parsed_msg ->
-    (* Per-request stream: notifications + final result flow here *)
-    let request_stream = Eio.Stream.create 64 in
+    let request_stream : Sse.event option Eio.Stream.t = Eio.Stream.create 64 in
     let ctx = make_context ~request_stream s in
-    let log_level_ref = ref (Atomic.get s.log_level) in
-    let response = Mcp_protocol_eio.Handler.dispatch
-      s.handler ctx log_level_ref parsed_msg in
-    Atomic.set s.log_level !log_level_ref;
-    if is_init then begin
-      (match Http_session.state s.session with
-       | Http_session.Uninitialized ->
-         ignore (Http_session.initialize s.session)
-       | _ -> ());
-      ignore (Http_session.ready s.session)
-    end;
-    (* Push the final result (or empty ack) into the stream, then close *)
-    (match response with
-     | Some resp_msg ->
-       let json_str = Yojson.Safe.to_string (Jsonrpc.message_to_yojson resp_msg) in
-       let event_id = Http_session.next_event_id s.session in
-       let evt = Sse.event "message" json_str |> Sse.with_id event_id in
-       Eio.Stream.add request_stream evt
-     | None -> ());
-    (* Build SSE response from the accumulated events *)
     let sse_headers =
       [ ("Content-Type", sse_content_type);
         ("Cache-Control", "no-cache");
@@ -282,17 +309,31 @@ let dispatch_jsonrpc_sse s json is_init : Cohttp_eio.Server.response =
       | Some sid -> (Http_session.header_name, sid) :: sse_headers
       | None -> sse_headers
     in
-    (* Collect all queued events into a single body *)
-    let buf = Buffer.create 256 in
-    let rec drain () =
-      match Eio.Stream.take_nonblocking request_stream with
-      | Some evt -> Buffer.add_string buf (Sse.encode evt); drain ()
-      | None -> ()
-    in
-    drain ();
-    Cohttp_eio.Server.respond_string
-      ~headers:(Http.Header.of_list sse_headers)
-      ~status:`OK ~body:(Buffer.contents buf) ()
+    let flow = Sse_flow.create request_stream in
+    let source = Sse_flow.as_source flow in
+    Eio.Switch.run (fun sw ->
+      Eio.Fiber.fork ~sw (fun () ->
+        let log_level_ref = ref (Atomic.get s.log_level) in
+        let response = Mcp_protocol_eio.Handler.dispatch
+          s.handler ctx log_level_ref parsed_msg in
+        Atomic.set s.log_level !log_level_ref;
+        if is_init then begin
+          (match Http_session.state s.session with
+           | Http_session.Uninitialized ->
+             ignore (Http_session.initialize s.session)
+           | _ -> ());
+          ignore (Http_session.ready s.session)
+        end;
+        (match response with
+         | Some resp_msg ->
+           let json_str = Yojson.Safe.to_string (Jsonrpc.message_to_yojson resp_msg) in
+           let event_id = Http_session.next_event_id s.session in
+           let evt = Sse.event "message" json_str |> Sse.with_id event_id in
+           Eio.Stream.add request_stream (Some evt)
+         | None -> ());
+        Eio.Stream.add request_stream None);
+      Cohttp_eio.Server.respond ~headers:(Http.Header.of_list sse_headers)
+        ~status:`OK ~body:source ())
 
 (* ── POST handler ────────────────────────────── *)
 
@@ -305,21 +346,54 @@ let handle_post_parsed s request json_result : Cohttp_eio.Server.response =
       ~message:(Printf.sprintf "JSON parse error: %s" msg) () in
     respond_json ~status:`OK (Jsonrpc.message_to_yojson err)
   | Ok (`List _) ->
-    (* MCP spec 2025-06-18: JSON-RPC batching is not supported. *)
     let err = Jsonrpc.make_error ~id:(Jsonrpc.Null)
       ~code:Error_codes.invalid_request
       ~message:"JSON-RPC batching is not supported" () in
     respond_json ~status:`OK (Jsonrpc.message_to_yojson err)
   | Ok json ->
-    let is_init = is_initialize_request json in
-    let dispatch = if accepts_sse request && not is_init
-      then dispatch_jsonrpc_sse else dispatch_jsonrpc in
-    if is_init then
-      dispatch s json true
-    else
-      match validate_session_or_error s.session request with
-      | Error resp -> resp
-      | Ok () -> dispatch s json false
+    (* Check if this is a client response to a server-initiated request *)
+    let resolved = match Jsonrpc.message_of_yojson json with
+      | Ok (Jsonrpc.Response resp) ->
+        let id_int = match resp.id with Jsonrpc.Int i -> Some i | _ -> None in
+        (match id_int with
+         | Some i ->
+           let resolver = Eio.Mutex.use_rw ~protect:true s.pending_mutex (fun () ->
+             match Hashtbl.find_opt s.pending_requests i with
+             | Some r -> Hashtbl.remove s.pending_requests i; Some r
+             | None -> None) in
+           (match resolver with
+            | Some r -> Eio.Promise.resolve r resp.result; true
+            | None -> false)
+         | None -> false)
+      | Ok (Jsonrpc.Error err) ->
+        let id_int = match err.id with Jsonrpc.Int i -> Some i | _ -> None in
+        (match id_int with
+         | Some i ->
+           let resolver = Eio.Mutex.use_rw ~protect:true s.pending_mutex (fun () ->
+             match Hashtbl.find_opt s.pending_requests i with
+             | Some r -> Hashtbl.remove s.pending_requests i; Some r
+             | None -> None) in
+           (match resolver with
+            | Some r ->
+              Eio.Promise.resolve r (`Assoc [("error", `String err.error.message)]);
+              true
+            | None -> false)
+         | None -> false)
+      | _ -> false
+    in
+    if resolved then
+      respond_empty ~status:`Accepted s.session
+    else begin
+      let is_init = is_initialize_request json in
+      let dispatch = if accepts_sse request && not is_init
+        then dispatch_jsonrpc_sse else dispatch_jsonrpc in
+      if is_init then
+        dispatch s json true
+      else
+        match validate_session_or_error s.session request with
+        | Error resp -> resp
+        | Ok () -> dispatch s json false
+    end
 
 let _handle_post s request body_str : Cohttp_eio.Server.response =
   let json_result =
