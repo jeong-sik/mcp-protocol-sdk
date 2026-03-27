@@ -18,6 +18,7 @@ let echo_tool : Mcp_types.tool = {
 let test_resource : Mcp_types.resource = {
   uri = "file:///hello.txt";
   name = "hello.txt";
+  title = None;
   description = Some "A test file";
   mime_type = Some "text/plain";
   icon = None;
@@ -25,6 +26,7 @@ let test_resource : Mcp_types.resource = {
 
 let greet_prompt : Mcp_types.prompt = {
   name = "greet";
+  title = None;
   description = Some "Greeting prompt";
   arguments = Some [{ name = "name"; description = None; required = Some true }];
   icon = None;
@@ -159,6 +161,7 @@ let make_sampling_server () =
       metadata = None;
       tools = None;
       tool_choice = None;
+      _meta = None;
     } in
     match ctx.request_sampling params with
     | Ok result ->
@@ -216,6 +219,7 @@ let make_multi_server () =
       metadata = None;
       tools = None;
       tool_choice = None;
+      _meta = None;
     } in
     match ctx.request_sampling sampling_params with
     | Error e -> Error ("Sampling failed: " ^ e)
@@ -341,6 +345,7 @@ let test_bidi_sampling () =
         content = Text { type_ = "text"; text = "The answer is 4" };
         model = "test-model";
         stop_reason = Some "endTurn";
+        _meta = None;
       }
     ) client
   in
@@ -458,6 +463,7 @@ let test_bidi_multiple_requests () =
         content = Text { type_ = "text"; text = "hi back" };
         model = "test-model";
         stop_reason = None;
+        _meta = None;
       })
     |> Mcp_protocol_eio.Client.on_roots_list (fun () ->
       Ok [

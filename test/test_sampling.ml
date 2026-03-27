@@ -107,6 +107,7 @@ let test_create_message_params_roundtrip () =
     metadata = Some (`Assoc [("key", `String "val")]);
     tools = None;
     tool_choice = None;
+    _meta = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   match Sampling.create_message_params_of_yojson j with
@@ -130,6 +131,7 @@ let test_create_message_params_minimal () =
     metadata = None;
     tools = None;
     tool_choice = None;
+    _meta = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   match Sampling.create_message_params_of_yojson j with
@@ -147,6 +149,7 @@ let test_create_message_result_roundtrip () =
     content = Text { type_ = "text"; text = "MCP stands for..." };
     model = "claude-3-opus";
     stop_reason = Some "end_turn";
+    _meta = None;
   } in
   let j = Sampling.create_message_result_to_yojson result in
   match Sampling.create_message_result_of_yojson j with
@@ -161,18 +164,77 @@ let test_create_message_result_no_stop () =
     content = Text { type_ = "text"; text = "..." };
     model = "gpt-4";
     stop_reason = None;
+    _meta = None;
   } in
   let j = Sampling.create_message_result_to_yojson result in
   let open Yojson.Safe.Util in
   Alcotest.(check json) "no stopReason" `Null (member "stopReason" j)
 
+(* --- sampling_tool_choice --- *)
+
+let test_sampling_tool_choice_auto () =
+  let j = Sampling.sampling_tool_choice_to_yojson Auto in
+  match Sampling.sampling_tool_choice_of_yojson j with
+  | Ok Auto -> ()
+  | Ok _ -> Alcotest.fail "expected Auto"
+  | Error e -> Alcotest.fail e
+
+let test_sampling_tool_choice_none () =
+  let j = Sampling.sampling_tool_choice_to_yojson None_ in
+  match Sampling.sampling_tool_choice_of_yojson j with
+  | Ok None_ -> ()
+  | Ok _ -> Alcotest.fail "expected None_"
+  | Error e -> Alcotest.fail e
+
+let test_sampling_tool_choice_tool () =
+  let j = Sampling.sampling_tool_choice_to_yojson (Tool "get_weather") in
+  match Sampling.sampling_tool_choice_of_yojson j with
+  | Ok (Tool name) ->
+    Alcotest.(check string) "tool name" "get_weather" name
+  | Ok _ -> Alcotest.fail "expected Tool"
+  | Error e -> Alcotest.fail e
+
+let test_sampling_tool_choice_invalid () =
+  let j = `Assoc [("type", `String "unknown")] in
+  Alcotest.(check bool) "invalid type"
+    true (Result.is_error (Sampling.sampling_tool_choice_of_yojson j))
+
+(* --- sampling_tool --- *)
+
+let test_sampling_tool_roundtrip () =
+  let t : Sampling.sampling_tool = {
+    name = "get_weather";
+    description = Some "Get current weather";
+    input_schema = `Assoc [("type", `String "object")];
+  } in
+  let j = Sampling.sampling_tool_to_yojson t in
+  match Sampling.sampling_tool_of_yojson j with
+  | Ok t' ->
+    Alcotest.(check string) "name" "get_weather" t'.name;
+    Alcotest.(check (option string)) "description" (Some "Get current weather") t'.description
+  | Error e -> Alcotest.fail e
+
+let test_sampling_tool_no_description () =
+  let t : Sampling.sampling_tool = {
+    name = "echo";
+    description = None;
+    input_schema = `Assoc [("type", `String "object")];
+  } in
+  let j = Sampling.sampling_tool_to_yojson t in
+  match Sampling.sampling_tool_of_yojson j with
+  | Ok t' ->
+    Alcotest.(check string) "name" "echo" t'.name;
+    Alcotest.(check bool) "no description" true (Option.is_none t'.description)
+  | Error e -> Alcotest.fail e
+
 (* --- Sampling tool calling (SEP-1577) --- *)
 
 let test_create_message_params_with_tools () =
-  let tool_def = `Assoc [
-    ("name", `String "get_weather");
-    ("inputSchema", `Assoc [("type", `String "object")]);
-  ] in
+  let tool_def : Sampling.sampling_tool = {
+    name = "get_weather";
+    description = None;
+    input_schema = `Assoc [("type", `String "object")];
+  } in
   let params : Sampling.create_message_params = {
     messages = [
       { role = User; content = Text { type_ = "text"; text = "Weather?" } };
@@ -184,14 +246,20 @@ let test_create_message_params_with_tools () =
     max_tokens = 512;
     stop_sequences = None;
     metadata = None;
-    tools = Some (`List [tool_def]);
-    tool_choice = Some (`Assoc [("type", `String "auto")]);
+    tools = Some [tool_def];
+    tool_choice = Some Auto;
+    _meta = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   match Sampling.create_message_params_of_yojson j with
   | Ok p' ->
     Alcotest.(check bool) "tools present" true (Option.is_some p'.tools);
-    Alcotest.(check bool) "tool_choice present" true (Option.is_some p'.tool_choice)
+    Alcotest.(check int) "tool count" 1 (List.length (Option.get p'.tools));
+    Alcotest.(check string) "tool name" "get_weather" (List.hd (Option.get p'.tools)).name;
+    Alcotest.(check bool) "tool_choice present" true (Option.is_some p'.tool_choice);
+    (match p'.tool_choice with
+     | Some Auto -> ()
+     | _ -> Alcotest.fail "expected Auto tool_choice")
   | Error e -> Alcotest.fail e
 
 let test_create_message_params_no_tools () =
@@ -206,6 +274,7 @@ let test_create_message_params_no_tools () =
     metadata = None;
     tools = None;
     tool_choice = None;
+    _meta = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   let open Yojson.Safe.Util in
@@ -236,6 +305,16 @@ let () =
     "model_preferences", [
       Alcotest.test_case "full" `Quick test_model_preferences_full;
       Alcotest.test_case "minimal" `Quick test_model_preferences_minimal;
+    ];
+    "sampling_tool_choice", [
+      Alcotest.test_case "auto" `Quick test_sampling_tool_choice_auto;
+      Alcotest.test_case "none" `Quick test_sampling_tool_choice_none;
+      Alcotest.test_case "tool" `Quick test_sampling_tool_choice_tool;
+      Alcotest.test_case "invalid" `Quick test_sampling_tool_choice_invalid;
+    ];
+    "sampling_tool", [
+      Alcotest.test_case "roundtrip" `Quick test_sampling_tool_roundtrip;
+      Alcotest.test_case "no description" `Quick test_sampling_tool_no_description;
     ];
     "create_message_params", [
       Alcotest.test_case "roundtrip" `Quick test_create_message_params_roundtrip;

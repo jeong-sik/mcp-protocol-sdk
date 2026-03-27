@@ -27,7 +27,7 @@ type context = {
   send_log : Logging.log_level -> string -> (unit, string) result;
   (** Send a logging/message notification. Only sent if the level
       is at or above the current log level set by the client. *)
-  send_progress : token:Mcp_result.progress_token -> progress:float -> total:float option -> (unit, string) result;
+  send_progress : token:Mcp_result.progress_token -> progress:float -> message:string option -> total:float option -> (unit, string) result;
   (** Send a progress notification for a long-running operation. *)
   request_sampling : Sampling.create_message_params -> (Sampling.create_message_result, string) result;
   (** Send a [sampling/createMessage] request to the client and wait for the response. *)
@@ -43,7 +43,7 @@ type tool_handler = context -> string -> Yojson.Safe.t option -> (Mcp_types.tool
 type resource_handler = context -> string -> (Mcp_types.resource_contents list, string) result
 type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.prompt_result, string) result
 type completion_handler =
-  Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
+  Mcp_types.completion_reference -> string -> string -> context:Mcp_types.completion_context option -> Mcp_types.completion_result
 
 (** Callbacks for serving tasks/get, tasks/result, tasks/list, tasks/cancel.
     Each handler receives a {!context} for sending notifications/progress

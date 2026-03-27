@@ -76,6 +76,39 @@ let respond_401 config ~error ~description =
   in
   Cohttp_eio.Server.respond_string ~headers ~status:`Unauthorized ~body ()
 
+(* ── incremental consent (G11, MCP spec 2025-11-25) ── *)
+
+(** Build a WWW-Authenticate header for incremental consent (403 response).
+    Includes the specific scopes the client needs to request. *)
+let www_authenticate_scope_header config ~required_scopes =
+  let parts = [
+    Printf.sprintf "Bearer realm=\"%s\"" (escape_quoted_string config.resource_server);
+    Printf.sprintf "error=\"insufficient_scope\"";
+    Printf.sprintf "error_description=\"Additional scopes required\"";
+    Printf.sprintf "scope=\"%s\"" (String.concat " " required_scopes);
+  ] in
+  String.concat ", " parts
+
+(** Respond with 403 Forbidden when a valid token lacks required scopes.
+    Per MCP spec 2025-11-25, the server returns 403 with a WWW-Authenticate
+    header listing the required scopes, prompting the client to request
+    additional consent from the user. *)
+let respond_403_insufficient_scope config ~missing_scopes =
+  let www_auth = www_authenticate_scope_header config ~required_scopes:missing_scopes in
+  let headers = Http.Header.of_list [
+    ("WWW-Authenticate", www_auth);
+    ("Content-Type", "application/json");
+  ] in
+  let body = Yojson.Safe.to_string
+    (Auth.oauth_error_to_yojson {
+      error = "insufficient_scope";
+      error_description = Some (Printf.sprintf "Missing scopes: %s"
+        (String.concat ", " missing_scopes));
+      error_uri = None;
+    })
+  in
+  Cohttp_eio.Server.respond_string ~headers ~status:`Forbidden ~body ()
+
 (* ── scope checking ─────────────────────────── *)
 
 module StringSet = Set.Make(String)
@@ -85,6 +118,11 @@ module StringSet = Set.Make(String)
 let check_scopes ~required ~granted =
   let granted_set = StringSet.of_list granted in
   List.for_all (fun s -> StringSet.mem s granted_set) required
+
+(** Return the list of required scopes not present in granted. *)
+let find_missing_scopes ~required ~granted =
+  let granted_set = StringSet.of_list granted in
+  List.filter (fun s -> not (StringSet.mem s granted_set)) required
 
 (* ── main check ─────────────────────────────── *)
 
@@ -106,14 +144,16 @@ let check_auth ?(required=true) config request =
         Error (respond_401 config
           ~error:"invalid_token"
           ~description:"Token has expired")
-      else if not (check_scopes
-          ~required:config.required_scopes
-          ~granted:token_info.Auth.scopes) then
-        Error (respond_401 config
-          ~error:"insufficient_scope"
-          ~description:"Token does not have required scopes")
       else
-        Ok (Some token_info)
+        let missing = find_missing_scopes
+          ~required:config.required_scopes
+          ~granted:token_info.Auth.scopes in
+        if missing <> [] then
+          (* G11: Return 403 with specific missing scopes for incremental consent.
+             The client can use this to request additional authorization. *)
+          Error (respond_403_insufficient_scope config ~missing_scopes:missing)
+        else
+          Ok (Some token_info)
 
 (* ── resource metadata ──────────────────────── *)
 

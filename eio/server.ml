@@ -9,7 +9,7 @@ open Mcp_protocol
 type context = Handler.context = {
   send_notification : method_:string -> params:Yojson.Safe.t option -> (unit, string) result;
   send_log : Logging.log_level -> string -> (unit, string) result;
-  send_progress : token:Mcp_result.progress_token -> progress:float -> total:float option -> (unit, string) result;
+  send_progress : token:Mcp_result.progress_token -> progress:float -> message:string option -> total:float option -> (unit, string) result;
   request_sampling : Sampling.create_message_params -> (Sampling.create_message_result, string) result;
   request_roots_list : unit -> (Mcp_types.root list, string) result;
   request_elicitation : Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result;
@@ -141,12 +141,12 @@ let make_context transport log_level_ref next_id ?clock () =
     else
       Ok ()
   in
-  let send_progress ~token ~progress ~total =
+  let send_progress ~token ~progress ~message ~total =
     let p = Mcp_result.{
       progress_token = token;
       progress;
       total;
-      message = None;
+      message;
     } in
     send_notification
       ~method_:Notifications.progress

@@ -105,6 +105,7 @@ let test_resource_roundtrip () =
   let res : Mcp_types.resource = {
     uri = "file:///test.txt";
     name = "test";
+    title = None;
     description = Some "A test file";
     mime_type = Some "text/plain";
     icon = None;
@@ -121,6 +122,7 @@ let test_resource_roundtrip () =
 let test_prompt_roundtrip () =
   let p : Mcp_types.prompt = {
     name = "code_review";
+    title = None;
     description = Some "Review code";
     arguments = Some [{
       name = "code";
@@ -160,6 +162,7 @@ let test_capabilities_roundtrip () =
     logging = Some ();
     completions = None;
     experimental = None;
+    extensions = None;
   } in
   let j = Mcp_types.server_capabilities_to_yojson caps in
   match Mcp_types.server_capabilities_of_yojson j with
@@ -179,8 +182,10 @@ let test_initialize_params_roundtrip () =
       sampling = Some ();
       elicitation = None;
       experimental = None;
+      extensions = None;
     };
     client_info = { name = "test-client"; version = "1.0" };
+    _meta = None;
   } in
   let j = Mcp_types.initialize_params_to_yojson params in
   match Mcp_types.initialize_params_of_yojson j with
@@ -199,9 +204,11 @@ let test_initialize_result_roundtrip () =
       logging = Some ();
       completions = None;
       experimental = None;
+      extensions = None;
     };
     server_info = { name = "test-server"; version = "0.1.0" };
     instructions = Some "Use these tools wisely";
+    _meta = None;
   } in
   let j = Mcp_types.initialize_result_to_yojson result in
   match Mcp_types.initialize_result_of_yojson j with
@@ -654,6 +661,7 @@ let test_tool_result_structured_content () =
     content = [Mcp_types.TextContent { type_ = "text"; text = "ok"; annotations = None }];
     is_error = None;
     structured_content = Some (`Assoc [("key", `String "value")]);
+    _meta = None;
   } in
   let j = Mcp_types.tool_result_to_yojson tr in
   match Mcp_types.tool_result_of_yojson j with
@@ -845,6 +853,7 @@ let test_resource_with_icon () =
   let r : Mcp_types.resource = {
     uri = "file:///x";
     name = "icon_res";
+    title = None;
     description = None;
     mime_type = None;
     icon = Some "data:image/svg+xml,<svg/>";
@@ -859,6 +868,7 @@ let test_resource_template_with_icon () =
   let t : Mcp_types.resource_template = {
     uri_template = "file:///{path}";
     name = "icon_tmpl";
+    title = None;
     description = None;
     mime_type = None;
     icon = Some "https://example.com/template.png";
@@ -872,6 +882,7 @@ let test_resource_template_with_icon () =
 let test_prompt_with_icon () =
   let p : Mcp_types.prompt = {
     name = "icon_prompt";
+    title = None;
     description = None;
     arguments = None;
     icon = Some "https://example.com/prompt.svg";
@@ -1024,6 +1035,7 @@ let test_capabilities_full_roundtrip () =
     logging = Some ();
     completions = Some ();
     experimental = Some (`Assoc [("custom", `Bool true)]);
+    extensions = None;
   } in
   let j = Mcp_types.server_capabilities_to_yojson caps in
   match Mcp_types.server_capabilities_of_yojson j with
@@ -1050,6 +1062,7 @@ let test_client_capabilities_full_roundtrip () =
     sampling = Some ();
     elicitation = Some ();
     experimental = Some (`Assoc [("beta", `String "feature")]);
+    extensions = None;
   } in
   let j = Mcp_types.client_capabilities_to_yojson caps in
   match Mcp_types.client_capabilities_of_yojson j with

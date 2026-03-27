@@ -12,7 +12,7 @@ module StringMap = Map.Make(String)
 type context = {
   send_notification : method_:string -> params:Yojson.Safe.t option -> (unit, string) result;
   send_log : Logging.log_level -> string -> (unit, string) result;
-  send_progress : token:Mcp_result.progress_token -> progress:float -> total:float option -> (unit, string) result;
+  send_progress : token:Mcp_result.progress_token -> progress:float -> message:string option -> total:float option -> (unit, string) result;
   request_sampling : Sampling.create_message_params -> (Sampling.create_message_result, string) result;
   request_roots_list : unit -> (Mcp_types.root list, string) result;
   request_elicitation : Mcp_types.elicitation_params -> (Mcp_types.elicitation_result, string) result;
@@ -24,7 +24,7 @@ type tool_handler = context -> string -> Yojson.Safe.t option -> (Mcp_types.tool
 type resource_handler = context -> string -> (Mcp_types.resource_contents list, string) result
 type prompt_handler = context -> string -> (string * string) list -> (Mcp_types.prompt_result, string) result
 type completion_handler =
-  Mcp_types.completion_reference -> string -> string -> Mcp_types.completion_result
+  Mcp_types.completion_reference -> string -> string -> context:Mcp_types.completion_context option -> Mcp_types.completion_result
 
 type task_handlers = {
   get: context -> string -> (Mcp_types.task, string) result;
@@ -110,7 +110,7 @@ let resource ~uri name ?description ?mime_type handler s =
 
 let resource_template ~uri_template name ?description ?mime_type handler s =
   let t : Mcp_types.resource_template = {
-    uri_template; name; description; mime_type; icon = None;
+    uri_template; name; title = None; description; mime_type; icon = None;
   } in
   add_resource_template t handler s
 
@@ -154,11 +154,13 @@ let build_initialize_params ~has_sampling ~has_roots ~has_elicitation
     sampling = if has_sampling then Some () else None;
     elicitation = if has_elicitation then Some () else None;
     experimental = None;
+    extensions = None;
   } in
   Mcp_types.initialize_params_to_yojson {
     protocol_version = Version.latest;
     capabilities = caps;
     client_info = { name = client_name; version = client_version };
+    _meta = None;
   }
 
 (* ── accessors ───────────────────────────────────────── *)
@@ -213,6 +215,7 @@ let server_capabilities s =
     logging = logging_cap;
     completions = completions_cap;
     experimental;
+    extensions = None;
   }
 
 (* ── request handlers ─────────────────────────────────── *)
@@ -244,6 +247,7 @@ let handle_initialize s id params =
     capabilities = server_capabilities s;
     server_info = { name = s.name; version = s.version };
     instructions = s.instructions;
+    _meta = None;
   } in
   Jsonrpc.make_response ~id ~result:(Mcp_types.initialize_result_to_yojson result)
 
@@ -497,9 +501,17 @@ let handle_completion_complete s id params =
           end
         | _ -> Error "Missing 'argument' in completion/complete params"
       in
+      let context = match List.assoc_opt "context" fields with
+        | Some j ->
+          begin match Mcp_types.completion_context_of_yojson j with
+          | Ok ctx -> Some ctx
+          | Error _ -> None
+          end
+        | None -> None
+      in
       begin match ref_, argument with
       | Ok ref_, Ok (arg_name, arg_value) ->
-        let result = handler ref_ arg_name arg_value in
+        let result = handler ref_ arg_name arg_value ~context in
         let completion_json = Mcp_types.completion_result_to_yojson result in
         Jsonrpc.make_response ~id
           ~result:(`Assoc [("completion", completion_json)])

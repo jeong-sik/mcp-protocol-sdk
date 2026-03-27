@@ -79,6 +79,22 @@ val discover :
   issuer:string ->
   (Auth.authorization_server_metadata, string) result
 
+(** {2 OpenID Connect Discovery (G10, MCP spec 2025-11-25)} *)
+
+(** Discover authorization server metadata via OIDC.
+    Fetches [{issuer}/.well-known/openid-configuration]. The OIDC discovery
+    response is compatible with OAuth 2.0 authorization server metadata. *)
+val discover_oidc :
+  net:_ Eio.Net.t -> sw:Eio.Switch.t ->
+  issuer:string ->
+  (Auth.authorization_server_metadata, string) result
+
+(** Discover with fallback: tries RFC 8414 first, then OIDC discovery. *)
+val discover_with_fallback :
+  net:_ Eio.Net.t -> sw:Eio.Switch.t ->
+  issuer:string ->
+  (Auth.authorization_server_metadata, string) result
+
 (** {2 Dynamic Client Registration (RFC 7591)} *)
 
 (** Client registration request parameters. *)
@@ -97,6 +113,19 @@ val register_client :
   registration_endpoint:string ->
   request:client_registration_request ->
   (string, string) result
+
+(** {2 Client ID Metadata Document (G9, MCP spec 2025-11-25)} *)
+
+(** Fetch a Client ID Metadata Document from a URL.
+    An alternative to Dynamic Client Registration: the client publishes
+    a JSON metadata document at a well-known URL.
+    Validates that the [client_id] field in the document matches [client_id_url].
+    @param client_id_url The URL where the metadata document is hosted
+    (must be HTTPS, loopback exception for dev). *)
+val fetch_client_metadata :
+  net:_ Eio.Net.t -> sw:Eio.Switch.t ->
+  client_id_url:string ->
+  (Auth.client_id_metadata_document, string) result
 
 (** {2 CSRF State Parameter} *)
 

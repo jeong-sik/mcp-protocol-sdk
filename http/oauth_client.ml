@@ -181,27 +181,58 @@ let require_https url context =
   | Some scheme -> Error (Printf.sprintf "%s requires HTTPS, got %s://" context scheme)
   | None -> Error (Printf.sprintf "%s: missing URL scheme" context)
 
+(** Strip trailing slash from a URL for well-known path construction. *)
+let strip_trailing_slash url =
+  if String.length url > 0 && url.[String.length url - 1] = '/'
+  then String.sub url 0 (String.length url - 1)
+  else url
+
+(** Parse a discovery response body into authorization_server_metadata. *)
+let parse_discovery_response body =
+  match Yojson.Safe.from_string body with
+  | exception Yojson.Json_error msg ->
+    Error (Printf.sprintf "Discovery JSON parse error: %s" msg)
+  | json ->
+    Auth.authorization_server_metadata_of_yojson json
+
 let discover ~net ~sw ~issuer =
   match require_https issuer "OAuth Discovery" with
   | Error e -> Error e
   | Ok () ->
-  let well_known_url =
-    let base = if String.length issuer > 0 && issuer.[String.length issuer - 1] = '/'
-      then String.sub issuer 0 (String.length issuer - 1)
-      else issuer
-    in
-    base ^ "/.well-known/oauth-authorization-server"
-  in
+  let base = strip_trailing_slash issuer in
+  let well_known_url = base ^ "/.well-known/oauth-authorization-server" in
   let status, body = get_json ~net ~sw ~url:well_known_url in
   match status with
-  | `OK ->
-    (match Yojson.Safe.from_string body with
-     | exception Yojson.Json_error msg ->
-       Error (Printf.sprintf "Discovery JSON parse error: %s" msg)
-     | json ->
-       Auth.authorization_server_metadata_of_yojson json)
+  | `OK -> parse_discovery_response body
   | _ ->
     Error (Printf.sprintf "Discovery failed: HTTP %s" (Http.Status.to_string status))
+
+(* ── OpenID Connect Discovery (G10) ───────────── *)
+
+(** Discover authorization server metadata via OpenID Connect Discovery.
+    Fetches [{issuer}/.well-known/openid-configuration] as an alternative
+    to RFC 8414's [oauth-authorization-server] endpoint. The OIDC discovery
+    response is largely compatible with OAuth 2.0 metadata. *)
+let discover_oidc ~net ~sw ~issuer =
+  match require_https issuer "OIDC Discovery" with
+  | Error e -> Error e
+  | Ok () ->
+  let base = strip_trailing_slash issuer in
+  let well_known_url = base ^ "/.well-known/openid-configuration" in
+  let status, body = get_json ~net ~sw ~url:well_known_url in
+  match status with
+  | `OK -> parse_discovery_response body
+  | _ ->
+    Error (Printf.sprintf "OIDC Discovery failed: HTTP %s" (Http.Status.to_string status))
+
+(** Discover authorization server metadata with fallback.
+    Tries RFC 8414 [oauth-authorization-server] first, then falls back
+    to OpenID Connect Discovery [openid-configuration]. *)
+let discover_with_fallback ~net ~sw ~issuer =
+  match discover ~net ~sw ~issuer with
+  | Ok _ as result -> result
+  | Error _ ->
+    discover_oidc ~net ~sw ~issuer
 
 (* ── Dynamic Client Registration (RFC 7591) ─── *)
 
@@ -251,6 +282,38 @@ let register_client ~net ~sw ~registration_endpoint ~request =
   | _ ->
     Error (Printf.sprintf "Registration failed: HTTP %s - %s"
       (Http.Status.to_string status) body_str)
+
+(* ── Client ID Metadata Document (G9, MCP spec 2025-11-25) ── *)
+
+(** Fetch a Client ID Metadata Document from a URL.
+    This is an alternative to Dynamic Client Registration (RFC 7591).
+    The client publishes a JSON metadata document at a well-known URL,
+    and the server fetches it to learn about the client.
+    The [client_id_url] must use HTTPS (loopback exception for dev). *)
+let fetch_client_metadata ~net ~sw ~client_id_url =
+  match require_https client_id_url "Client ID Metadata Document" with
+  | Error e -> Error e
+  | Ok () ->
+  let status, body = get_json ~net ~sw ~url:client_id_url in
+  match status with
+  | `OK ->
+    (match Yojson.Safe.from_string body with
+     | exception Yojson.Json_error msg ->
+       Error (Printf.sprintf "Client metadata JSON parse error: %s" msg)
+     | json ->
+       match Auth.client_id_metadata_document_of_yojson json with
+       | Error e -> Error (Printf.sprintf "Client metadata decode error: %s" e)
+       | Ok doc ->
+         (* Validate that client_id in the document matches the URL *)
+         if doc.Auth.client_id <> client_id_url then
+           Error (Printf.sprintf
+             "Client ID mismatch: document says %s but fetched from %s"
+             doc.Auth.client_id client_id_url)
+         else
+           Ok doc)
+  | _ ->
+    Error (Printf.sprintf "Client metadata fetch failed: HTTP %s - %s"
+      (Http.Status.to_string status) body)
 
 (* ── CSRF state parameter (L2) ─────────────── *)
 

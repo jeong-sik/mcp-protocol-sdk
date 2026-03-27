@@ -46,6 +46,21 @@ val extract_bearer_token : Http.Request.t -> string option
     Uses StringSet for O(n + m) performance. *)
 val check_scopes : required:string list -> granted:string list -> bool
 
+(** Return the list of required scopes not present in granted.
+    Useful for incremental consent to tell the client exactly which
+    scopes to request. *)
+val find_missing_scopes : required:string list -> granted:string list -> string list
+
+(** Respond with 403 Forbidden when a valid token lacks required scopes.
+    Per MCP spec 2025-11-25 (incremental consent), the server returns 403
+    with a WWW-Authenticate header listing the missing scopes, prompting
+    the client to request additional consent.
+    @param missing_scopes The scopes the token is lacking. *)
+val respond_403_insufficient_scope :
+  config ->
+  missing_scopes:string list ->
+  Cohttp_eio.Server.response
+
 (** Escape double quotes and backslashes for RFC 7230 quoted-string.
     Also strips control characters (0x00-0x1F) and DEL (0x7F). *)
 val escape_quoted_string : string -> string

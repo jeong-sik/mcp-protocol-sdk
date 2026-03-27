@@ -9,6 +9,7 @@
 type protocol_version =
   | V_2024_11_05
   | V_2025_03_26
+  | V_2025_06_18
   | V_2025_11_25
 
 val protocol_version_to_string : protocol_version -> string
@@ -125,6 +126,7 @@ type tool_result = {
   content: tool_content list;
   is_error: bool option;
   structured_content: Yojson.Safe.t option;
+  _meta: Yojson.Safe.t option;
 }
 
 val tool_result_to_yojson : tool_result -> Yojson.Safe.t
@@ -135,6 +137,7 @@ val tool_result_of_yojson : Yojson.Safe.t -> (tool_result, string) result
 type resource = {
   uri: string;
   name: string;
+  title: string option;
   description: string option;
   mime_type: string option;
   icon: string option;
@@ -146,6 +149,7 @@ val resource_of_yojson : Yojson.Safe.t -> (resource, string) result
 type resource_template = {
   uri_template: string;
   name: string;
+  title: string option;
   description: string option;
   mime_type: string option;
   icon: string option;
@@ -177,6 +181,7 @@ val prompt_argument_of_yojson : Yojson.Safe.t -> (prompt_argument, string) resul
 
 type prompt = {
   name: string;
+  title: string option;
   description: string option;
   arguments: prompt_argument list option;
   icon: string option;
@@ -261,6 +266,7 @@ type server_capabilities = {
   logging: unit option;
   completions: unit option;
   experimental: Yojson.Safe.t option;
+  extensions: Yojson.Safe.t option;
 }
 
 val server_capabilities_to_yojson : server_capabilities -> Yojson.Safe.t
@@ -271,6 +277,7 @@ type client_capabilities = {
   sampling: unit option;
   elicitation: unit option;
   experimental: Yojson.Safe.t option;
+  extensions: Yojson.Safe.t option;
 }
 
 val client_capabilities_to_yojson : client_capabilities -> Yojson.Safe.t
@@ -298,6 +305,7 @@ type initialize_params = {
   protocol_version: string;
   capabilities: client_capabilities;
   client_info: client_info;
+  _meta: Yojson.Safe.t option;
 }
 
 val initialize_params_to_yojson : initialize_params -> Yojson.Safe.t
@@ -308,6 +316,7 @@ type initialize_result = {
   capabilities: server_capabilities;
   server_info: server_info;
   instructions: string option;
+  _meta: Yojson.Safe.t option;
 }
 
 val initialize_result_to_yojson : initialize_result -> Yojson.Safe.t
@@ -338,8 +347,8 @@ val paginated_result_of_yojson : (Yojson.Safe.t -> ('a, string) result) -> Yojso
 (** {2 Convenience Constructors} *)
 
 val make_tool : name:string -> ?description:string -> ?title:string -> ?annotations:tool_annotations -> ?icon:string -> ?input_schema:Yojson.Safe.t -> ?output_schema:Yojson.Safe.t -> ?execution:tool_execution -> unit -> tool
-val make_resource : uri:string -> name:string -> ?description:string -> ?mime_type:string -> ?icon:string -> unit -> resource
-val make_prompt : name:string -> ?description:string -> ?arguments:prompt_argument list -> ?icon:string -> unit -> prompt
+val make_resource : uri:string -> name:string -> ?title:string -> ?description:string -> ?mime_type:string -> ?icon:string -> unit -> resource
+val make_prompt : name:string -> ?title:string -> ?description:string -> ?arguments:prompt_argument list -> ?icon:string -> unit -> prompt
 
 (** {2 Type-safe Content Constructors}
 

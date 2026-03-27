@@ -46,6 +46,27 @@ val model_hint_of_yojson : Yojson.Safe.t -> (model_hint, string) result
 val model_preferences_to_yojson : model_preferences -> Yojson.Safe.t
 val model_preferences_of_yojson : Yojson.Safe.t -> (model_preferences, string) result
 
+(** {2 Sampling Tools} *)
+
+(** Tool choice for sampling: auto, none, or a specific tool. *)
+type sampling_tool_choice =
+  | Auto
+  | None_
+  | Tool of string
+
+val sampling_tool_choice_to_yojson : sampling_tool_choice -> Yojson.Safe.t
+val sampling_tool_choice_of_yojson : Yojson.Safe.t -> (sampling_tool_choice, string) result
+
+(** Tool definition for sampling. *)
+type sampling_tool = {
+  name: string;
+  description: string option;
+  input_schema: Yojson.Safe.t;
+}
+
+val sampling_tool_to_yojson : sampling_tool -> Yojson.Safe.t
+val sampling_tool_of_yojson : Yojson.Safe.t -> (sampling_tool, string) result
+
 (** {2 Create Message} *)
 
 type create_message_params = {
@@ -57,8 +78,9 @@ type create_message_params = {
   max_tokens: int;
   stop_sequences: string list option;
   metadata: Yojson.Safe.t option;
-  tools: Yojson.Safe.t option;
-  tool_choice: Yojson.Safe.t option;
+  tools: sampling_tool list option;
+  tool_choice: sampling_tool_choice option;
+  _meta: Yojson.Safe.t option;
 }
 
 val create_message_params_to_yojson : create_message_params -> Yojson.Safe.t
@@ -69,6 +91,7 @@ type create_message_result = {
   content: sampling_content;
   model: string;
   stop_reason: string option;
+  _meta: Yojson.Safe.t option;
 }
 
 val create_message_result_to_yojson : create_message_result -> Yojson.Safe.t

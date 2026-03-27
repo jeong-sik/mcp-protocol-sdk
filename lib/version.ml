@@ -7,8 +7,9 @@
 (** Supported protocol versions in chronological order *)
 let supported_versions = [
   "2024-11-05"; (* Initial stable version *)
-  "2025-03-26"; (* Added elicitation, streamable HTTP *)
-  "2025-11-25"; (* Latest: sampling, enhanced capabilities *)
+  "2025-03-26"; (* Streamable HTTP, OAuth 2.1, tool annotations, audio *)
+  "2025-06-18"; (* Structured output, elicitation, resource links, title *)
+  "2025-11-25"; (* Latest: sampling, tasks, icons, extensions *)
 ]
 
 (** The latest supported protocol version *)
@@ -54,8 +55,11 @@ type version_features = {
   has_sampling: bool;
   has_elicitation: bool;
   has_streamable_http: bool;
+  has_structured_output: bool;
+  has_resource_links: bool;
   has_tasks: bool;
   has_icons: bool;
+  has_extensions: bool;
 }
 
 let features_of_version version =
@@ -66,10 +70,15 @@ let features_of_version version =
     has_sampling = false;
     has_elicitation = false;
     has_streamable_http = false;
+    has_structured_output = false;
+    has_resource_links = false;
     has_tasks = false;
     has_icons = false;
+    has_extensions = false;
   } in
   match version with
   | "2024-11-05" -> base
-  | "2025-03-26" -> { base with has_elicitation = true; has_streamable_http = true }
-  | "2025-11-25" | _ -> { base with has_sampling = true; has_elicitation = true; has_streamable_http = true; has_tasks = true; has_icons = true }
+  | "2025-03-26" -> { base with has_streamable_http = true }
+  | "2025-06-18" -> { base with has_streamable_http = true; has_elicitation = true; has_structured_output = true; has_resource_links = true }
+  | "2025-11-25" -> { base with has_sampling = true; has_elicitation = true; has_streamable_http = true; has_structured_output = true; has_resource_links = true; has_tasks = true; has_icons = true; has_extensions = true }
+  | _ -> { base with has_sampling = true; has_elicitation = true; has_streamable_http = true; has_structured_output = true; has_resource_links = true; has_tasks = true; has_icons = true; has_extensions = true }
