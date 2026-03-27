@@ -37,8 +37,8 @@ val now_us : unit -> Int64.t
 (** Current timestamp in microseconds (Int64). *)
 
 val sleep : float -> unit
-(** Sleep for the given duration in seconds. Uses [Eio.Time.sleep] when clock
-    is set, [Unix.sleepf] otherwise (with a warning for durations > 10ms). *)
+(** Sleep for the given duration in seconds. Uses [Eio.Time.sleep].
+    @raise Failure if no Eio clock has been set via {!set_clock}. *)
 
 val timed : (unit -> 'a) -> 'a * float
 (** [timed f] runs [f ()] and returns [(result, duration_seconds)]. *)

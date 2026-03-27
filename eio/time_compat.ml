@@ -49,20 +49,19 @@ let now_ms () =
 let now_us () =
   Int64.of_float (now () *. 1_000_000.0)
 
-(** Sleep for given duration (Eio-native when available)
+(** Sleep for given duration using Eio clock.
 
-    When clock is not set, logs a warning and uses Unix.sleepf.
-    Callers in Eio contexts MUST ensure [set_clock] was called first,
-    otherwise Unix.sleepf blocks the entire Eio domain (all fibers freeze).
+    Raises [Failure] if no Eio clock is set. Previous versions fell back to
+    [Unix.sleepf] which blocks the entire Eio domain (all fibers freeze).
+    Call [set_clock] at startup to avoid this.
 
-    @param seconds Duration to sleep *)
+    @param seconds Duration to sleep
+    @raise Failure if no Eio clock has been set via [set_clock] *)
 let sleep seconds =
   match !global_clock with
   | Some clock -> Eio.Time.sleep clock seconds
   | None ->
-      if seconds > 0.01 then
-        Printf.eprintf "[WARN] [Time_compat] sleep %.3fs with Unix.sleepf (no Eio clock set)\n%!" seconds;
-      Unix.sleepf seconds
+    failwith "Time_compat.sleep: no Eio clock set. Call Time_compat.set_clock at startup."
 
 (** Measure execution time of a function
 
