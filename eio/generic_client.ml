@@ -148,6 +148,17 @@ module Make (T : Mcp_protocol.Transport.S) = struct
 
   (* ── request/response ─────────────────────────────── *)
 
+  let fire_notification t (notif : Jsonrpc.notification) =
+    match t.notification_handler with
+    | Some handler ->
+      (try handler notif.method_ notif.params
+       with
+       | Out_of_memory | Stack_overflow as exn -> raise exn
+       | exn ->
+         Printf.eprintf "Client: notification handler raised: %s\n%!"
+           (Printexc.to_string exn))
+    | None -> ()
+
   let read_response t expected_id =
     let rec loop () =
       match T.read t.transport with
@@ -164,7 +175,6 @@ module Make (T : Mcp_protocol.Transport.S) = struct
           loop ()
         | Jsonrpc.Notification notif ->
           if notif.method_ = Notifications.cancelled then begin
-            (* Check if cancellation targets our in-flight request *)
             let matches = match notif.params with
               | Some (`Assoc fields) ->
                 begin match List.assoc_opt "requestId" fields with
@@ -187,29 +197,11 @@ module Make (T : Mcp_protocol.Transport.S) = struct
               Error (Printf.sprintf "Request cancelled%s"
                 (match reason with Some r -> ": " ^ r | None -> ""))
             else begin
-              (* Cancellation for a different request; pass to handler and continue *)
-              (match t.notification_handler with
-               | Some handler ->
-                 (try handler notif.method_ notif.params
-                  with
-                  | Out_of_memory | Stack_overflow as exn -> raise exn
-                  | exn ->
-                    Printf.eprintf "Client: notification handler raised: %s\n%!"
-                      (Printexc.to_string exn))
-               | None -> ());
+              fire_notification t notif;
               loop ()
             end
           end else begin
-            (* Normal notification handling *)
-            (match t.notification_handler with
-             | Some handler ->
-               (try handler notif.method_ notif.params
-                with
-                | Out_of_memory | Stack_overflow as exn -> raise exn
-                | exn ->
-                  Printf.eprintf "Client: notification handler raised: %s\n%!"
-                    (Printexc.to_string exn))
-             | None -> ());
+            fire_notification t notif;
             loop ()
           end
         | _ -> loop ()
