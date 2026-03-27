@@ -143,6 +143,7 @@ type create_message_params = {
   metadata: Yojson.Safe.t option;
   tools: Yojson.Safe.t option;       (** Tool definitions for tool calling in sampling (SEP-1577) *)
   tool_choice: Yojson.Safe.t option;  (** Tool choice constraint *)
+  _meta: Yojson.Safe.t option;
 }
 
 let create_message_params_to_yojson p =
@@ -182,6 +183,10 @@ let create_message_params_to_yojson p =
     | Some tc -> ("toolChoice", tc) :: fields
     | None -> fields
   in
+  let fields = match p._meta with
+    | Some j -> ("_meta", j) :: fields
+    | None -> fields
+  in
   `Assoc fields
 
 let create_message_params_of_yojson = function
@@ -214,6 +219,8 @@ let create_message_params_of_yojson = function
          metadata = List.assoc_opt "metadata" fields;
          tools = List.assoc_opt "tools" fields;
          tool_choice = List.assoc_opt "toolChoice" fields;
+         _meta = (match List.assoc_opt "_meta" fields with
+           | Some (`Null) -> None | Some j -> Some j | None -> None);
        }
      | Error e -> Error e)
   | _ -> Error "create_message_params must be an object"
@@ -224,6 +231,7 @@ type create_message_result = {
   content: sampling_content;
   model: string;
   stop_reason: string option;
+  _meta: Yojson.Safe.t option;
 }
 
 let create_message_result_to_yojson r =
@@ -234,6 +242,10 @@ let create_message_result_to_yojson r =
   ] in
   let fields = match r.stop_reason with
     | Some sr -> ("stopReason", `String sr) :: fields
+    | None -> fields
+  in
+  let fields = match r._meta with
+    | Some j -> ("_meta", j) :: fields
     | None -> fields
   in
   `Assoc fields
@@ -250,6 +262,9 @@ let create_message_result_of_yojson = function
          | Some (`String s) -> Some s
          | _ -> None
        in
-       Ok { role; content; model; stop_reason }
+       let _meta = match List.assoc_opt "_meta" fields with
+         | Some (`Null) -> None | Some j -> Some j | None -> None
+       in
+       Ok { role; content; model; stop_reason; _meta }
      | Error e, _ | _, Error e -> Error e)
   | _ -> Error "create_message_result must be an object"

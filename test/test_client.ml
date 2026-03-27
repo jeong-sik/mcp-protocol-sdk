@@ -455,6 +455,7 @@ let test_sampling_callback () =
         content = Text { type_ = "text"; text = "Reply" };
         model = "test-model";
         stop_reason = Some "endTurn";
+        _meta = None;
       }
     ) client
   in
@@ -591,6 +592,7 @@ let test_request_interleaved_with_response () =
         content = Text { type_ = "text"; text = "LLM reply" };
         model = "interleaved-model";
         stop_reason = None;
+        _meta = None;
       }
     ) client
   in

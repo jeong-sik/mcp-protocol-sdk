@@ -126,6 +126,7 @@ type tool_result = {
   content: tool_content list;
   is_error: bool option;
   structured_content: Yojson.Safe.t option;
+  _meta: Yojson.Safe.t option;
 }
 
 val tool_result_to_yojson : tool_result -> Yojson.Safe.t
@@ -265,6 +266,7 @@ type server_capabilities = {
   logging: unit option;
   completions: unit option;
   experimental: Yojson.Safe.t option;
+  extensions: Yojson.Safe.t option;
 }
 
 val server_capabilities_to_yojson : server_capabilities -> Yojson.Safe.t
@@ -275,6 +277,7 @@ type client_capabilities = {
   sampling: unit option;
   elicitation: unit option;
   experimental: Yojson.Safe.t option;
+  extensions: Yojson.Safe.t option;
 }
 
 val client_capabilities_to_yojson : client_capabilities -> Yojson.Safe.t
@@ -302,6 +305,7 @@ type initialize_params = {
   protocol_version: string;
   capabilities: client_capabilities;
   client_info: client_info;
+  _meta: Yojson.Safe.t option;
 }
 
 val initialize_params_to_yojson : initialize_params -> Yojson.Safe.t
@@ -312,6 +316,7 @@ type initialize_result = {
   capabilities: server_capabilities;
   server_info: server_info;
   instructions: string option;
+  _meta: Yojson.Safe.t option;
 }
 
 val initialize_result_to_yojson : initialize_result -> Yojson.Safe.t

@@ -358,6 +358,7 @@ type tool_result = {
   content: tool_content list;
   is_error: bool option; [@default None]
   structured_content: Yojson.Safe.t option; [@default None] [@key "structuredContent"]
+  _meta: Yojson.Safe.t option; [@default None] [@key "_meta"]
 }
 
 let tool_result_to_yojson (r : tool_result) =
@@ -367,6 +368,9 @@ let tool_result_to_yojson (r : tool_result) =
   in
   let fields = match r.structured_content with
     | Some j -> ("structuredContent", j) :: fields | None -> fields
+  in
+  let fields = match r._meta with
+    | Some j -> ("_meta", j) :: fields | None -> fields
   in
   `Assoc fields
 
@@ -387,7 +391,10 @@ let tool_result_of_yojson = function
       | None -> match List.assoc_opt "structured_content" fields with
         | Some (`Null) -> None | Some j -> Some j | None -> None
     in
-    Result.map (fun content -> { content; is_error; structured_content }) content
+    let _meta = match List.assoc_opt "_meta" fields with
+      | Some (`Null) -> None | Some j -> Some j | None -> None
+    in
+    Result.map (fun content -> { content; is_error; structured_content; _meta }) content
   | _ -> Error "tool_result: expected object"
 
 (** {2 Resources} *)
@@ -513,10 +520,14 @@ type server_capabilities = {
   logging: unit option;
   completions: unit option;
   experimental: Yojson.Safe.t option;
+  extensions: Yojson.Safe.t option;
 }
 
 let server_capabilities_to_yojson (c : server_capabilities) =
   let fields = [] in
+  let fields = match c.extensions with
+    | Some j -> ("extensions", j) :: fields | None -> fields
+  in
   let fields = match c.experimental with
     | Some j -> ("experimental", j) :: fields | None -> fields
   in
@@ -560,7 +571,10 @@ let server_capabilities_of_yojson = function
     let experimental = match List.assoc_opt "experimental" fields with
       | Some (`Null) -> None | Some j -> Some j | None -> None
     in
-    Ok { tools; resources; prompts; logging; completions; experimental }
+    let extensions = match List.assoc_opt "extensions" fields with
+      | Some (`Null) -> None | Some j -> Some j | None -> None
+    in
+    Ok { tools; resources; prompts; logging; completions; experimental; extensions }
   | _ -> Error "server_capabilities: expected object"
 
 (** Client capabilities — typed per MCP 2025-11-25 spec. *)
@@ -569,10 +583,14 @@ type client_capabilities = {
   sampling: unit option;
   elicitation: unit option;
   experimental: Yojson.Safe.t option;
+  extensions: Yojson.Safe.t option;
 }
 
 let client_capabilities_to_yojson (c : client_capabilities) =
   let fields = [] in
+  let fields = match c.extensions with
+    | Some j -> ("extensions", j) :: fields | None -> fields
+  in
   let fields = match c.experimental with
     | Some j -> ("experimental", j) :: fields | None -> fields
   in
@@ -602,7 +620,10 @@ let client_capabilities_of_yojson = function
     let experimental = match List.assoc_opt "experimental" fields with
       | Some (`Null) -> None | Some j -> Some j | None -> None
     in
-    Ok { roots; sampling; elicitation; experimental }
+    let extensions = match List.assoc_opt "extensions" fields with
+      | Some (`Null) -> None | Some j -> Some j | None -> None
+    in
+    Ok { roots; sampling; elicitation; experimental; extensions }
   | _ -> Error "client_capabilities: expected object"
 
 (** {2 Initialize} *)
@@ -626,6 +647,7 @@ type initialize_params = {
   protocol_version: string; [@key "protocolVersion"]
   capabilities: client_capabilities;
   client_info: client_info; [@key "clientInfo"]
+  _meta: Yojson.Safe.t option; [@default None] [@key "_meta"]
 }
 [@@deriving yojson]
 
@@ -635,6 +657,7 @@ type initialize_result = {
   capabilities: server_capabilities;
   server_info: server_info; [@key "serverInfo"]
   instructions: string option; [@default None]
+  _meta: Yojson.Safe.t option; [@default None] [@key "_meta"]
 }
 [@@deriving yojson]
 
@@ -736,13 +759,15 @@ let make_resource_link_content ?annotations ?name ?description ?mime_type uri =
 let tool_result_of_text text =
   { content = [make_text_content text];
     is_error = None;
-    structured_content = None }
+    structured_content = None;
+    _meta = None }
 
 (** Create an error tool result *)
 let tool_result_of_error message =
   { content = [make_text_content message];
     is_error = Some true;
-    structured_content = None }
+    structured_content = None;
+    _meta = None }
 
 (** {2 Completion} *)
 include Mcp_types_completion

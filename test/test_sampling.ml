@@ -107,6 +107,7 @@ let test_create_message_params_roundtrip () =
     metadata = Some (`Assoc [("key", `String "val")]);
     tools = None;
     tool_choice = None;
+    _meta = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   match Sampling.create_message_params_of_yojson j with
@@ -130,6 +131,7 @@ let test_create_message_params_minimal () =
     metadata = None;
     tools = None;
     tool_choice = None;
+    _meta = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   match Sampling.create_message_params_of_yojson j with
@@ -147,6 +149,7 @@ let test_create_message_result_roundtrip () =
     content = Text { type_ = "text"; text = "MCP stands for..." };
     model = "claude-3-opus";
     stop_reason = Some "end_turn";
+    _meta = None;
   } in
   let j = Sampling.create_message_result_to_yojson result in
   match Sampling.create_message_result_of_yojson j with
@@ -161,6 +164,7 @@ let test_create_message_result_no_stop () =
     content = Text { type_ = "text"; text = "..." };
     model = "gpt-4";
     stop_reason = None;
+    _meta = None;
   } in
   let j = Sampling.create_message_result_to_yojson result in
   let open Yojson.Safe.Util in
@@ -186,6 +190,7 @@ let test_create_message_params_with_tools () =
     metadata = None;
     tools = Some (`List [tool_def]);
     tool_choice = Some (`Assoc [("type", `String "auto")]);
+    _meta = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   match Sampling.create_message_params_of_yojson j with
@@ -206,6 +211,7 @@ let test_create_message_params_no_tools () =
     metadata = None;
     tools = None;
     tool_choice = None;
+    _meta = None;
   } in
   let j = Sampling.create_message_params_to_yojson params in
   let open Yojson.Safe.Util in

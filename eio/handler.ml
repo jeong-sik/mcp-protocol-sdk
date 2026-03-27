@@ -154,11 +154,13 @@ let build_initialize_params ~has_sampling ~has_roots ~has_elicitation
     sampling = if has_sampling then Some () else None;
     elicitation = if has_elicitation then Some () else None;
     experimental = None;
+    extensions = None;
   } in
   Mcp_types.initialize_params_to_yojson {
     protocol_version = Version.latest;
     capabilities = caps;
     client_info = { name = client_name; version = client_version };
+    _meta = None;
   }
 
 (* ── accessors ───────────────────────────────────────── *)
@@ -213,6 +215,7 @@ let server_capabilities s =
     logging = logging_cap;
     completions = completions_cap;
     experimental;
+    extensions = None;
   }
 
 (* ── request handlers ─────────────────────────────────── *)
@@ -244,6 +247,7 @@ let handle_initialize s id params =
     capabilities = server_capabilities s;
     server_info = { name = s.name; version = s.version };
     instructions = s.instructions;
+    _meta = None;
   } in
   Jsonrpc.make_response ~id ~result:(Mcp_types.initialize_result_to_yojson result)
 

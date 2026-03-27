@@ -59,6 +59,7 @@ type create_message_params = {
   metadata: Yojson.Safe.t option;
   tools: Yojson.Safe.t option;
   tool_choice: Yojson.Safe.t option;
+  _meta: Yojson.Safe.t option;
 }
 
 val create_message_params_to_yojson : create_message_params -> Yojson.Safe.t
@@ -69,6 +70,7 @@ type create_message_result = {
   content: sampling_content;
   model: string;
   stop_reason: string option;
+  _meta: Yojson.Safe.t option;
 }
 
 val create_message_result_to_yojson : create_message_result -> Yojson.Safe.t
