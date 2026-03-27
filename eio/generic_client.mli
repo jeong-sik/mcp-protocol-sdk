@@ -46,12 +46,14 @@ module Make (T : Mcp_protocol.Transport.S) : sig
   (** {2 Tools} *)
 
   val list_tools : ?cursor:string -> t -> (Mcp_types.tool list, string) result
+  val list_tools_all : t -> (Mcp_types.tool list, string) result
   val call_tool : t -> name:string -> ?arguments:Yojson.Safe.t -> unit ->
     (Mcp_types.tool_result, string) result
 
   (** {2 Resources} *)
 
   val list_resources : ?cursor:string -> t -> (Mcp_types.resource list, string) result
+  val list_resources_all : t -> (Mcp_types.resource list, string) result
   val read_resource : t -> uri:string ->
     (Mcp_types.resource_contents list, string) result
   val subscribe_resource : t -> uri:string -> (unit, string) result
@@ -62,6 +64,7 @@ module Make (T : Mcp_protocol.Transport.S) : sig
   (** {2 Prompts} *)
 
   val list_prompts : ?cursor:string -> t -> (Mcp_types.prompt list, string) result
+  val list_prompts_all : t -> (Mcp_types.prompt list, string) result
   val get_prompt : t -> name:string -> ?arguments:(string * string) list -> unit ->
     (Mcp_types.prompt_result, string) result
 
@@ -70,6 +73,7 @@ module Make (T : Mcp_protocol.Transport.S) : sig
   val get_task : t -> task_id:string -> (Mcp_types.task, string) result
   val get_task_result : t -> task_id:string -> (Yojson.Safe.t, string) result
   val list_tasks : ?cursor:string -> t -> (Mcp_types.task list, string) result
+  val list_tasks_all : t -> (Mcp_types.task list, string) result
   val cancel_task : t -> task_id:string -> (Mcp_types.task, string) result
 
   (** {2 Low-level} *)
