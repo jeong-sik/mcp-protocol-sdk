@@ -38,7 +38,7 @@ let generate_session_id () =
       let rec loop off =
         if off < len then begin
           let n = Unix.read fd buf off (len - off) in
-          if n <= 0 then failwith "generate_session_id: /dev/urandom short read";
+          if n <= 0 then raise (Sys_error "/dev/urandom short read");
           loop (off + n)
         end
       in
