@@ -225,23 +225,6 @@ let send_request t ~method_ ?params ?(timeout = default_timeout) () =
       Error (Printf.sprintf "Request timed out after %.1fs" timeout)
     end
 
-let collect_pages fetch_page =
-  let module Cursor_set = Set.Make (String) in
-  let rec loop seen cursor acc_rev =
-    match fetch_page cursor with
-    | Error _ as err -> err
-    | Ok (page, next_cursor) ->
-      begin match next_cursor with
-      | Some value when Cursor_set.mem value seen ->
-        Error (Printf.sprintf "Pagination cursor loop detected: %s" value)
-      | Some value ->
-        loop (Cursor_set.add value seen) (Some value)
-          (List.rev_append page acc_rev)
-      | None -> Ok (List.rev_append page acc_rev |> List.rev)
-      end
-  in
-  loop Cursor_set.empty None []
-
 (* ── lifecycle ───────────────────────────────── *)
 
 let initialize t ~client_name ~client_version =
@@ -279,7 +262,7 @@ let list_tools ?cursor t =
       (Mcp_protocol_eio.Handler.parse_paginated_list_field "tools" Mcp_types.tool_of_yojson result)
 
 let list_tools_all t =
-  collect_pages (fun cursor ->
+  Pagination.collect_pages (fun cursor ->
     let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
     match send_request t ~method_:Notifications.tools_list ?params () with
     | Error e -> Error e
@@ -311,7 +294,7 @@ let list_resources ?cursor t =
       (Mcp_protocol_eio.Handler.parse_paginated_list_field "resources" Mcp_types.resource_of_yojson result)
 
 let list_resources_all t =
-  collect_pages (fun cursor ->
+  Pagination.collect_pages (fun cursor ->
     let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
     match send_request t ~method_:Notifications.resources_list ?params () with
     | Error e -> Error e
@@ -361,7 +344,7 @@ let list_prompts ?cursor t =
       (Mcp_protocol_eio.Handler.parse_paginated_list_field "prompts" Mcp_types.prompt_of_yojson result)
 
 let list_prompts_all t =
-  collect_pages (fun cursor ->
+  Pagination.collect_pages (fun cursor ->
     let params = Option.map (fun c -> `Assoc [("cursor", `String c)]) cursor in
     match send_request t ~method_:Notifications.prompts_list ?params () with
     | Error e -> Error e

@@ -468,6 +468,7 @@ type prompt_message = {
 type prompt_result = {
   description: string option; [@default None]
   messages: prompt_message list;
+  _meta: Yojson.Safe.t option; [@default None] [@key "_meta"]
 }
 [@@deriving yojson]
 

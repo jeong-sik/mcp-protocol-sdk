@@ -104,6 +104,7 @@ let () =
                  text = Printf.sprintf "Hello, %s." who;
              };
              }];
+             _meta = None;
            })
     |> Mcp_protocol_http.Http_server.add_completion_handler
          (fun ref_ arg_name arg_value ~context:_ ->

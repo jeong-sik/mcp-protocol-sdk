@@ -125,6 +125,7 @@ let test_prompts () =
           role = User;
           content = PromptText { type_ = "text"; text = "Hello, " ^ name };
         }];
+        _meta = None;
       })
   in
   Eio.Fiber.fork ~sw (fun () ->

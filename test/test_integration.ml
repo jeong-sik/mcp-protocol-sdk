@@ -51,7 +51,8 @@ let make_server () =
     let who = match List.assoc_opt "name" args with Some v -> v | None -> "stranger" in
     Ok { Mcp_types.description = None;
          messages = [{ role = Mcp_types.Assistant;
-                       content = Mcp_types.PromptText { type_ = "text"; text = "Hello, " ^ who } }] })
+                       content = Mcp_types.PromptText { type_ = "text"; text = "Hello, " ^ who } }];
+         _meta = None })
 
 (** Run a full server-client test.
     Creates two pipes, runs server in one fiber and client callback in another.

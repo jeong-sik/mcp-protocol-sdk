@@ -85,7 +85,7 @@ let test_add_resource () =
 
 let test_add_prompt () =
   let prompt = Mcp_types.make_prompt ~name:"greet" () in
-  let handler _ctx _name _args = Ok Mcp_types.{ description = None; messages = [] } in
+  let handler _ctx _name _args = Ok Mcp_types.{ description = None; messages = []; _meta = None } in
   let h = Handler.create ~name:"s" ~version:"1" ()
     |> Handler.add_prompt prompt handler in
   Alcotest.(check int) "one prompt" 1 (List.length (Handler.prompts h))
