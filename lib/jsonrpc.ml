@@ -142,8 +142,12 @@ let message_of_yojson json =
   | Yojson.Json_error msg ->
     Error (Printf.sprintf "JSON parse error: %s" msg)
   | Out_of_memory | Stack_overflow as exn -> raise exn
-  | exn ->
-    Error (Printf.sprintf "Unexpected parse error: %s" (Printexc.to_string exn))
+  | Not_found ->
+    Error "JSON-RPC parse error: missing required field"
+  | Invalid_argument msg ->
+    Error (Printf.sprintf "JSON-RPC parse error: %s" msg)
+  | Failure msg ->
+    Error (Printf.sprintf "JSON-RPC parse error: %s" msg)
 
 (** Convert a JSON-RPC message to JSON *)
 let message_to_yojson = function
