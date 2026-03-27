@@ -268,7 +268,14 @@ let handle_tools_call s ctx id params =
       | Some (`String n) -> Some n
       | _ -> None
     in
-    let arguments = List.assoc_opt "arguments" fields in
+    let arguments =
+      let args = List.assoc_opt "arguments" fields in
+      let meta = List.assoc_opt "_meta" fields in
+      match args, meta with
+      | Some (`Assoc a), Some m -> Some (`Assoc (("_meta", m) :: a))
+      | None, Some m -> Some (`Assoc [("_meta", m)])
+      | _ -> args
+    in
     begin match name with
     | None ->
       Jsonrpc.make_error ~id ~code:Error_codes.invalid_params

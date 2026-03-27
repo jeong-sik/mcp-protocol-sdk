@@ -162,14 +162,15 @@ let () =
            in
            (match token with
             | Some tok ->
-              for i = 1 to 5 do
+              let steps = [(0.0, "Starting"); (50.0, "Halfway"); (100.0, "Done")] in
+              List.iter (fun (progress, msg) ->
                 ignore (ctx.send_progress
                   ~token:tok
-                  ~progress:(float_of_int i)
-                  ~message:(Some (Printf.sprintf "Step %d of 5" i))
-                  ~total:(Some 5.0));
+                  ~progress
+                  ~message:(Some msg)
+                  ~total:(Some 100.0));
                 Unix.sleepf 0.05
-              done
+              ) steps
             | None -> ());
            Ok (Mcp_types.tool_result_of_text "Progress complete"))
 

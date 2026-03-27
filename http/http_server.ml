@@ -128,15 +128,22 @@ let is_initialize_request json =
 
 (* ── context builder ─────────────────────────── *)
 
-(** Build a handler context that sends notifications via SSE broadcaster *)
-let make_context s : Mcp_protocol_eio.Handler.context =
+(** Build a handler context.  When [request_stream] is provided,
+    notifications are sent to that per-request SSE stream instead of
+    the global broadcaster (used for POST-response SSE mode). *)
+let make_context ?(request_stream : Sse.event Eio.Stream.t option) s
+    : Mcp_protocol_eio.Handler.context =
+  let send_event evt =
+    match request_stream with
+    | Some stream -> Eio.Stream.add stream evt; Ok ()
+    | None -> Sse.Broadcaster.broadcast s.broadcaster evt; Ok ()
+  in
   let send_notification ~method_ ~params =
     let msg = Jsonrpc.make_notification ~method_ ?params () in
     let json_str = Yojson.Safe.to_string (Jsonrpc.message_to_yojson msg) in
     let event_id = Http_session.next_event_id s.session in
     let evt = Sse.event "message" json_str |> Sse.with_id event_id in
-    Sse.Broadcaster.broadcast s.broadcaster evt;
-    Ok ()
+    send_event evt
   in
   let send_log level message =
     if Logging.should_log ~min_level:(Atomic.get s.log_level) ~msg_level:level then
@@ -186,7 +193,18 @@ let validate_session_or_error session request =
 
 (* ── dispatch logic ──────────────────────────── *)
 
-(** Parse JSON-RPC and dispatch through handler, returning a response function *)
+(** Check if the client accepts SSE responses for POST requests. *)
+let accepts_sse request =
+  match Http.Header.get (Http.Request.headers request) "accept" with
+  | Some accept -> String.contains (String.lowercase_ascii accept) 'e'
+    && (let a = String.lowercase_ascii accept in
+        let p = "text/event-stream" in
+        let rec find i = i + String.length p <= String.length a &&
+          (String.sub a i (String.length p) = p || find (i + 1))
+        in find 0)
+  | None -> false
+
+(** Parse JSON-RPC and dispatch through handler, returning a direct JSON response. *)
 let dispatch_jsonrpc s json is_init : Cohttp_eio.Server.response =
   let msg = Jsonrpc.message_of_yojson json in
   match msg with
@@ -216,6 +234,66 @@ let dispatch_jsonrpc s json is_init : Cohttp_eio.Server.response =
      | None ->
        respond_empty ~status:`Accepted s.session)
 
+(** Dispatch via POST-response SSE streaming.
+    Notifications (progress, log) and the final result are all sent as SSE events
+    in the HTTP response body.  This is the MCP Streamable HTTP pattern for
+    methods that produce interim notifications during execution. *)
+let dispatch_jsonrpc_sse s json is_init : Cohttp_eio.Server.response =
+  let msg = Jsonrpc.message_of_yojson json in
+  match msg with
+  | Error parse_err ->
+    let err = Jsonrpc.make_error ~id:(Jsonrpc.Int 0)
+      ~code:Error_codes.parse_error
+      ~message:(Printf.sprintf "JSON-RPC parse error: %s" parse_err) () in
+    respond_json_with_session s.session ~status:`OK
+      (Jsonrpc.message_to_yojson err)
+  | Ok parsed_msg ->
+    (* Per-request stream: notifications + final result flow here *)
+    let request_stream = Eio.Stream.create 64 in
+    let ctx = make_context ~request_stream s in
+    let log_level_ref = ref (Atomic.get s.log_level) in
+    let response = Mcp_protocol_eio.Handler.dispatch
+      s.handler ctx log_level_ref parsed_msg in
+    Atomic.set s.log_level !log_level_ref;
+    if is_init then begin
+      (match Http_session.state s.session with
+       | Http_session.Uninitialized ->
+         ignore (Http_session.initialize s.session)
+       | _ -> ());
+      ignore (Http_session.ready s.session)
+    end;
+    (* Push the final result (or empty ack) into the stream, then close *)
+    (match response with
+     | Some resp_msg ->
+       let json_str = Yojson.Safe.to_string (Jsonrpc.message_to_yojson resp_msg) in
+       let event_id = Http_session.next_event_id s.session in
+       let evt = Sse.event "message" json_str |> Sse.with_id event_id in
+       Eio.Stream.add request_stream evt
+     | None -> ());
+    (* Build SSE response from the accumulated events *)
+    let sse_headers =
+      [ ("Content-Type", sse_content_type);
+        ("Cache-Control", "no-cache");
+        ("Connection", "keep-alive");
+        ("Mcp-Protocol-Version", Version.latest);
+      ] @ cors_headers
+    in
+    let sse_headers = match Http_session.session_id s.session with
+      | Some sid -> (Http_session.header_name, sid) :: sse_headers
+      | None -> sse_headers
+    in
+    (* Collect all queued events into a single body *)
+    let buf = Buffer.create 256 in
+    let rec drain () =
+      match Eio.Stream.take_nonblocking request_stream with
+      | Some evt -> Buffer.add_string buf (Sse.encode evt); drain ()
+      | None -> ()
+    in
+    drain ();
+    Cohttp_eio.Server.respond_string
+      ~headers:(Http.Header.of_list sse_headers)
+      ~status:`OK ~body:(Buffer.contents buf) ()
+
 (* ── POST handler ────────────────────────────── *)
 
 (** H5 fix: Accept pre-parsed JSON to avoid double-parsing in callback. *)
@@ -234,12 +312,14 @@ let handle_post_parsed s request json_result : Cohttp_eio.Server.response =
     respond_json ~status:`OK (Jsonrpc.message_to_yojson err)
   | Ok json ->
     let is_init = is_initialize_request json in
+    let dispatch = if accepts_sse request && not is_init
+      then dispatch_jsonrpc_sse else dispatch_jsonrpc in
     if is_init then
-      dispatch_jsonrpc s json true
+      dispatch s json true
     else
       match validate_session_or_error s.session request with
       | Error resp -> resp
-      | Ok () -> dispatch_jsonrpc s json false
+      | Ok () -> dispatch s json false
 
 let _handle_post s request body_str : Cohttp_eio.Server.response =
   let json_result =
