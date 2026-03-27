@@ -172,11 +172,14 @@ let send_notification t ~method_ ?params () =
 
 (* ── request/response ────────────────────────── *)
 
-let do_request t ~method_ ?params () =
+let do_request t ~method_ ?params ?pre_allocated_id () =
   if method_ <> Notifications.initialize && t.session_id = None then
     Error "Not initialized: call initialize first"
   else
-  let id = Jsonrpc.Int (Atomic.fetch_and_add t.next_id 1) in
+  let id = match pre_allocated_id with
+    | Some id -> id
+    | None -> Jsonrpc.Int (Atomic.fetch_and_add t.next_id 1)
+  in
   let msg = Jsonrpc.make_request ~id ~method_ ?params () in
   let json = Jsonrpc.message_to_yojson msg in
   match post_json t json with
@@ -202,10 +205,10 @@ let send_request t ~method_ ?params ?(timeout = default_timeout) () =
   match t.timeout_fn with
   | None -> do_request t ~method_ ?params ()
   | Some tf ->
-    (* Capture the request ID before do_request increments next_id *)
-    let request_id = Jsonrpc.Int (Atomic.get t.next_id) in
+    (* Atomically claim the ID before timeout wrapper to avoid TOCTOU race *)
+    let request_id = Jsonrpc.Int (Atomic.fetch_and_add t.next_id 1) in
     begin try
-      tf.run timeout (fun () -> do_request t ~method_ ?params ())
+      tf.run timeout (fun () -> do_request t ~method_ ?params ~pre_allocated_id:request_id ())
     with Eio.Time.Timeout ->
       (* Best effort: notify peer we gave up *)
       let id = request_id in

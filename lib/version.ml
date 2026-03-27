@@ -81,4 +81,4 @@ let features_of_version version =
   | "2025-03-26" -> { base with has_streamable_http = true }
   | "2025-06-18" -> { base with has_streamable_http = true; has_elicitation = true; has_structured_output = true; has_resource_links = true }
   | "2025-11-25" -> { base with has_sampling = true; has_elicitation = true; has_streamable_http = true; has_structured_output = true; has_resource_links = true; has_tasks = true; has_icons = true; has_extensions = true }
-  | _ -> { base with has_sampling = true; has_elicitation = true; has_streamable_http = true; has_structured_output = true; has_resource_links = true; has_tasks = true; has_icons = true; has_extensions = true }
+  | _ -> base (* Unknown versions get base features only (fail-safe) *)
