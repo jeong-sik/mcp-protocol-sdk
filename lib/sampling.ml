@@ -131,6 +131,64 @@ let model_preferences_of_yojson = function
     }
   | _ -> Error "model_preferences must be an object"
 
+(** Tool choice for sampling: auto, none, or a specific tool. *)
+type sampling_tool_choice =
+  | Auto
+  | None_
+  | Tool of string
+
+let sampling_tool_choice_to_yojson = function
+  | Auto -> `Assoc [("type", `String "auto")]
+  | None_ -> `Assoc [("type", `String "none")]
+  | Tool name -> `Assoc [("type", `String "tool"); ("name", `String name)]
+
+let sampling_tool_choice_of_yojson = function
+  | `Assoc fields ->
+    (match List.assoc_opt "type" fields with
+     | Some (`String "auto") -> Ok Auto
+     | Some (`String "none") -> Ok None_
+     | Some (`String "tool") ->
+       (match List.assoc_opt "name" fields with
+        | Some (`String name) -> Ok (Tool name)
+        | _ -> Error "sampling_tool_choice: 'tool' type requires a 'name' field")
+     | Some (`String other) -> Error ("sampling_tool_choice: unknown type: " ^ other)
+     | _ -> Error "sampling_tool_choice: missing 'type' field")
+  | _ -> Error "sampling_tool_choice must be an object"
+
+(** Tool definition for sampling. *)
+type sampling_tool = {
+  name: string;
+  description: string option;
+  input_schema: Yojson.Safe.t;
+}
+
+let sampling_tool_to_yojson t =
+  let fields = [
+    ("name", `String t.name);
+    ("inputSchema", t.input_schema);
+  ] in
+  let fields = match t.description with
+    | Some d -> ("description", `String d) :: fields
+    | None -> fields
+  in
+  `Assoc fields
+
+let sampling_tool_of_yojson = function
+  | `Assoc fields ->
+    (match List.assoc_opt "name" fields with
+     | Some (`String name) ->
+       let description = match List.assoc_opt "description" fields with
+         | Some (`String s) -> Some s
+         | _ -> None
+       in
+       let input_schema = match List.assoc_opt "inputSchema" fields with
+         | Some j -> j
+         | None -> `Assoc [("type", `String "object")]
+       in
+       Ok { name; description; input_schema }
+     | _ -> Error "sampling_tool: missing 'name' field")
+  | _ -> Error "sampling_tool must be an object"
+
 (** Parameters for sampling/createMessage request. *)
 type create_message_params = {
   messages: sampling_message list;
@@ -141,8 +199,8 @@ type create_message_params = {
   max_tokens: int;
   stop_sequences: string list option;
   metadata: Yojson.Safe.t option;
-  tools: Yojson.Safe.t option;       (** Tool definitions for tool calling in sampling (SEP-1577) *)
-  tool_choice: Yojson.Safe.t option;  (** Tool choice constraint *)
+  tools: sampling_tool list option;
+  tool_choice: sampling_tool_choice option;
   _meta: Yojson.Safe.t option;
 }
 
@@ -176,11 +234,11 @@ let create_message_params_to_yojson p =
     | None -> fields
   in
   let fields = match p.tools with
-    | Some t -> ("tools", t) :: fields
+    | Some ts -> ("tools", `List (List.map sampling_tool_to_yojson ts)) :: fields
     | None -> fields
   in
   let fields = match p.tool_choice with
-    | Some tc -> ("toolChoice", tc) :: fields
+    | Some tc -> ("toolChoice", sampling_tool_choice_to_yojson tc) :: fields
     | None -> fields
   in
   let fields = match p._meta with
@@ -217,8 +275,18 @@ let create_message_params_of_yojson = function
          stop_sequences = (match List.assoc_opt "stopSequences" fields with
            | Some (`List l) -> Some (List.map to_string l) | _ -> None);
          metadata = List.assoc_opt "metadata" fields;
-         tools = List.assoc_opt "tools" fields;
-         tool_choice = List.assoc_opt "toolChoice" fields;
+         tools = (match List.assoc_opt "tools" fields with
+           | Some (`List l) ->
+             let parsed = List.filter_map (fun j ->
+               match sampling_tool_of_yojson j with
+               | Ok t -> Some t | Error _ -> None
+             ) l in
+             if parsed = [] then None else Some parsed
+           | _ -> None);
+         tool_choice = (match List.assoc_opt "toolChoice" fields with
+           | Some j -> (match sampling_tool_choice_of_yojson j with
+             | Ok tc -> Some tc | Error _ -> None)
+           | None -> None);
          _meta = (match List.assoc_opt "_meta" fields with
            | Some (`Null) -> None | Some j -> Some j | None -> None);
        }
