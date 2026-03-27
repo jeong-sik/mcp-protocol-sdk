@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-27
+
+### Changed
+- **BREAKING (packaging)**: Merged 3 opam packages (`mcp_protocol`, `mcp_protocol_eio`,
+  `mcp_protocol_http`) into a single `mcp_protocol` opam package.
+  - Consumers now install one opam package instead of three.
+  - Dune library public names changed from underscore to dot notation:
+    `mcp_protocol_eio` -> `mcp_protocol.eio`, `mcp_protocol_http` -> `mcp_protocol.http`.
+  - OCaml module names (`Mcp_protocol_eio`, `Mcp_protocol_http`) remain unchanged.
+  - Downstream `dune` files must update `(libraries ...)` references accordingly.
+- Version bump to 1.1.0.
+
 ## [1.0.1] - 2026-03-27
 
 ### Added

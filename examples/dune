@@ -1,41 +1,41 @@
 (executable
  (name echo_server)
  (public_name mcp_echo_server)
- (package mcp_protocol_eio)
+ (package mcp_protocol)
  (modules echo_server)
- (libraries mcp_protocol mcp_protocol_eio eio_main yojson))
+ (libraries mcp_protocol mcp_protocol.eio eio_main yojson))
 
 (executable
  (name echo_client)
  (public_name mcp_echo_client)
- (package mcp_protocol_eio)
+ (package mcp_protocol)
  (modules echo_client)
- (libraries mcp_protocol mcp_protocol_eio eio_main eio.unix yojson))
+ (libraries mcp_protocol mcp_protocol.eio eio_main eio.unix yojson))
 
 (executable
  (name http_echo_server)
  (public_name mcp_http_echo_server)
- (package mcp_protocol_http)
+ (package mcp_protocol)
  (modules http_echo_server)
- (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson))
+ (libraries mcp_protocol mcp_protocol.http eio eio_main cohttp-eio yojson))
 
 (executable
  (name http_echo_client)
  (public_name mcp_http_echo_client)
- (package mcp_protocol_http)
+ (package mcp_protocol)
  (modules http_echo_client)
- (libraries mcp_protocol mcp_protocol_http eio eio.unix eio_main cohttp-eio yojson))
+ (libraries mcp_protocol mcp_protocol.http eio eio.unix eio_main cohttp-eio yojson))
 
 (executable
  (name http_auth_server)
  (public_name mcp_http_auth_server)
- (package mcp_protocol_http)
+ (package mcp_protocol)
  (modules http_auth_server)
- (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson unix))
+ (libraries mcp_protocol mcp_protocol.http eio eio_main cohttp-eio yojson unix))
 
 (executable
  (name conformance_server)
  (public_name mcp_conformance_server)
- (package mcp_protocol_http)
+ (package mcp_protocol)
  (modules conformance_server)
- (libraries mcp_protocol mcp_protocol_http eio eio_main cohttp-eio yojson))
+ (libraries mcp_protocol mcp_protocol.http eio eio_main cohttp-eio yojson))

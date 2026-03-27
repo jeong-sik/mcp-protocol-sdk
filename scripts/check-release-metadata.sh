@@ -25,8 +25,6 @@ check_opam_version() {
 }
 
 check_opam_version "mcp_protocol.opam"
-check_opam_version "mcp_protocol_eio.opam"
-check_opam_version "mcp_protocol_http.opam"
 
 changelog_version="$(
   sed -nE 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -1
