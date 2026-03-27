@@ -13,8 +13,10 @@ type t = {
   auth : Auth_middleware.config option;
 }
 
-let create ~name ~version ?instructions ?auth () = {
-  handler = Mcp_protocol_eio.Handler.create ~name ~version ?instructions ();
+let create ~name ~version ?instructions ?enable_logging ?auth () = {
+  handler =
+    Mcp_protocol_eio.Handler.create ~name ~version ?instructions
+      ?enable_logging ();
   session = Http_session.create ();
   broadcaster = Sse.Broadcaster.create ();
   log_level = Atomic.make Logging.Warning;

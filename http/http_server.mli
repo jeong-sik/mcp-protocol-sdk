@@ -1,6 +1,6 @@
 (** MCP HTTP Server using Streamable HTTP transport (cohttp-eio).
 
-    Implements MCP spec 2025-03-26 Streamable HTTP endpoints:
+    Implements MCP spec 2025-11-25 Streamable HTTP endpoints:
     - POST /mcp - JSON-RPC requests
     - GET /mcp - SSE stream for server-initiated notifications
     - DELETE /mcp - Session termination
@@ -28,9 +28,12 @@ type t
 (** {2 Construction} *)
 
 (** Create a new HTTP MCP server.
+    @param enable_logging When [false], omit the [logging] capability from
+    initialize responses.
     @param auth Optional OAuth 2.1 auth middleware configuration.
     When provided, all requests (except initialize) require a valid bearer token. *)
 val create : name:string -> version:string -> ?instructions:string ->
+  ?enable_logging:bool ->
   ?auth:Auth_middleware.config -> unit -> t
 
 (** Register a tool and its handler. *)

@@ -31,8 +31,8 @@ type t = {
   next_request_id: int Atomic.t;
 }
 
-let create ~name ~version ?instructions () =
-  { handler = Handler.create ~name ~version ?instructions ();
+let create ~name ~version ?instructions ?enable_logging () =
+  { handler = Handler.create ~name ~version ?instructions ?enable_logging ();
     transport_ref = None;
     log_level = Logging.Warning;
     next_request_id = Atomic.make 1 }

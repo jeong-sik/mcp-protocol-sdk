@@ -26,7 +26,7 @@ let () =
   let server =
     Mcp_protocol_http.Http_server.create
       ~name:"mcp-conformance-server"
-      ~version:"0.16.0"
+      ~version:"1.0.1"
       ~instructions:"Conformance test server for MCP protocol SDK."
       ()
     (* Tool: echo *)
@@ -64,6 +64,23 @@ let () =
              text = Some "Hello from conformance server.";
              blob = None;
            }])
+    (* Resource template: profile *)
+    |> Mcp_protocol_http.Http_server.add_resource_template
+         Mcp_types.{
+           uri_template = "test://profile/{name}";
+           name = "profile";
+           title = Some "Profile Resource Template";
+           description = Some "A dynamic profile resource template";
+           mime_type = Some "application/json";
+           icon = None;
+         }
+         (fun _ctx uri ->
+           Ok [Mcp_types.{
+             uri;
+             mime_type = Some "application/json";
+             text = Some (Printf.sprintf {|{"uri":"%s","kind":"profile"}|} uri);
+             blob = None;
+           }])
     (* Prompt: greet *)
     |> Mcp_protocol_http.Http_server.add_prompt
          (Mcp_types.make_prompt
@@ -85,9 +102,23 @@ let () =
                content = PromptText {
                  type_ = "text";
                  text = Printf.sprintf "Hello, %s." who;
-               };
+             };
              }];
            })
+    |> Mcp_protocol_http.Http_server.add_completion_handler
+         (fun ref_ arg_name arg_value ~context:_ ->
+           let values =
+             match ref_, arg_name with
+             | Mcp_types.Prompt_ref { name }, "name" when String.equal name "greet" ->
+               let prefix = String.lowercase_ascii arg_value in
+               ["World"; "OCaml"; "MCP"; "Conformance"]
+               |> List.filter (fun value ->
+                    String.starts_with
+                      ~prefix
+                      (String.lowercase_ascii value))
+             | _ -> []
+           in
+           Mcp_types.make_completion_result ~values ())
   in
   let net = Eio.Stdenv.net env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in

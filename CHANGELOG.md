@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-03-27
+
+### Added
+- `Handler.create`, `Server.create`, and `Http_server.create` accept `?enable_logging:bool`
+  so servers can omit the `logging` capability from `initialize` responses when needed.
+- `scripts/check-release-metadata.sh` verifies version consistency across `dune-project`,
+  generated opam files, the top changelog entry, and the conformance example server.
+- `ROADMAP.md`, `CONTRIBUTING.md`, `docs/RELEASE-POLICY.md`, and `conformance/README.md`
+  document the Tier 1 quality path, issue labels, release discipline, and official
+  conformance workflow.
+
+### Changed
+- Version line normalized to `1.0.1` to follow the `v1.0.0` release tag line.
+- CI now runs release metadata consistency checks in addition to generated opam checks.
+- `examples/conformance_server.ml` now advertises version `1.0.1` and registers a
+  resource template plus completion handler for broader protocol coverage.
+
 ## [0.16.0] - 2026-03-27
 
 ### Added

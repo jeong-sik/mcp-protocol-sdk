@@ -57,6 +57,7 @@ type t = {
   name: string;
   version: string;
   instructions: string option;
+  enable_logging: bool;
   tools: registered_tool StringMap.t;
   resources: registered_resource StringMap.t;
   resource_templates: registered_resource_template StringMap.t;
@@ -66,8 +67,8 @@ type t = {
   subscribed_uris: StringSet.t Atomic.t;
 }
 
-let create ~name ~version ?instructions () =
-  { name; version; instructions;
+let create ~name ~version ?instructions ?(enable_logging = true) () =
+  { name; version; instructions; enable_logging;
     tools = StringMap.empty; resources = StringMap.empty;
     resource_templates = StringMap.empty; prompts = StringMap.empty;
     completion_handler = None;
@@ -189,7 +190,9 @@ let server_capabilities s =
     if StringMap.is_empty s.prompts then None
     else Some { list_changed = Some false }
   in
-  let logging_cap = Some () in
+  let logging_cap =
+    if s.enable_logging then Some () else None
+  in
   let completions_cap = match s.completion_handler with
     | Some _ -> Some ()
     | None -> None

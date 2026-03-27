@@ -12,10 +12,20 @@
 set -euo pipefail
 
 PORT="${MCP_CONFORMANCE_PORT:-9100}"
-URL="http://localhost:${PORT}/mcp"
+HOST="${MCP_CONFORMANCE_HOST:-127.0.0.1}"
+URL="http://${HOST}:${PORT}/mcp"
 SCENARIO="${1:-}"
+PACKAGE="${MCP_CONFORMANCE_PACKAGE:-@modelcontextprotocol/conformance}"
 
-cd "$(git rev-parse --show-toplevel)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${script_dir}/.."
+
+for cmd in curl npx opam; do
+  if ! command -v "${cmd}" >/dev/null 2>&1; then
+    echo "Missing required command: ${cmd}" >&2
+    exit 1
+  fi
+done
 
 echo "Building conformance server..."
 opam exec -- dune build examples/conformance_server.exe
@@ -52,11 +62,11 @@ echo "URL: ${URL}"
 echo ""
 
 if [ -n "${SCENARIO}" ]; then
-  npx @modelcontextprotocol/conformance server \
+  npx "${PACKAGE}" server \
     --url "${URL}" \
     --scenario "${SCENARIO}"
 else
-  npx @modelcontextprotocol/conformance server \
+  npx "${PACKAGE}" server \
     --url "${URL}"
 fi
 
