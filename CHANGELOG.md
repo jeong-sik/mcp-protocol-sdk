@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-28
+
+### Changed
+- **BREAKING**: `Sampling.include_context` changed from `string option` to typed variant
+  `include_context option` (None_ | ThisServer | AllServers). Eliminates stringly-typed values.
+- **BREAKING**: `Mcp_types.prompt_result` now has `_meta: Yojson.Safe.t option` field.
+  Record literals must include `_meta = None`. JSON deserialization is backwards-compatible
+  via `[@default None]`.
+
+### Added
+- `Pagination` module: shared cursor-based pagination with loop detection
+  (extracted from duplicated code in `client.ml` and `http_client.ml`).
+- `Sampling.include_context_to_yojson` / `include_context_of_yojson` serializers.
+- `Generic_server.create` now accepts `?enable_logging` for parity with `Server.create`.
+- `fire_notification` helper in `Generic_client` for notification dispatch.
+- `list_all_pages` helper in both client modules for paginated list fetching.
+
+### Refactored
+- `Server` module reduced from 224 lines to 13 by delegating to
+  `Generic_server.Make(Stdio_transport)`.
+- Net code reduction: -197 lines across the SDK.
+
+### Fixed
+- TOCTOU race in `Http_client`: request ID now pre-allocated with `Atomic.fetch_and_add`
+  before the timeout wrapper, preventing wrong-ID cancellation under concurrency.
+- `Version.features_of_version`: unknown versions now return base features only
+  (fail-safe), instead of silently enabling all features.
+
+### Docs
+- README updated for single-package structure, typed APIs, test counts.
+
 ## [1.1.0] - 2026-03-27
 
 ### Changed
