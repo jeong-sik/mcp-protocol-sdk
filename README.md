@@ -4,17 +4,19 @@
 
 A pure OCaml 5.x implementation of the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), covering specification versions 2024-11-05 through 2025-11-25.
 
-## Packages
+## Package
 
-| OPAM Package | Description | Key Modules |
+Single opam package `mcp_protocol` with three sub-libraries:
+
+| Library | Public Name | Key Modules |
 |---|---|---|
-| `mcp_protocol` | Core types, JSON-RPC 2.0, serialization | `Mcp_types`, `Jsonrpc`, `Sampling`, `Logging`, `Auth` |
-| `mcp_protocol_eio` | Stdio transport, functor server/client | `Generic_server`, `Generic_client`, `Stdio_transport`, `Memory_transport`, `Middleware` |
-| `mcp_protocol_http` | Streamable HTTP, SSE, OAuth 2.1 | `Http_server`, `Http_client`, `Oauth_client`, `Auth_middleware` |
+| Core | `mcp_protocol` | `Mcp_types`, `Jsonrpc`, `Sampling`, `Logging`, `Auth`, `Pagination` |
+| Eio | `mcp_protocol.eio` | `Server`, `Generic_server`, `Generic_client`, `Stdio_transport`, `Memory_transport`, `Middleware` |
+| HTTP | `mcp_protocol.http` | `Http_server`, `Http_client`, `Oauth_client`, `Auth_middleware` |
 
 ## Project Status
 
-- Stable release line: `1.0.x`
+- Current version: `1.1.0`
 - Roadmap: [ROADMAP.md](ROADMAP.md)
 - Release policy: [docs/RELEASE-POLICY.md](docs/RELEASE-POLICY.md)
 - Contribution guide and issue labels: [CONTRIBUTING.md](CONTRIBUTING.md)
@@ -35,11 +37,11 @@ Version negotiation selects the highest mutually-supported version during the in
 
 ### Transports
 
-| Transport | Package | Description |
+| Transport | Library | Description |
 |---|---|---|
-| Stdio (NDJSON) | `mcp_protocol_eio` | Newline-delimited JSON over stdin/stdout |
-| Streamable HTTP | `mcp_protocol_http` | HTTP + SSE via `cohttp-eio`, with session management |
-| In-memory | `mcp_protocol_eio` | Paired channels for zero-IO testing (`Memory_transport`) |
+| Stdio (NDJSON) | `mcp_protocol.eio` | Newline-delimited JSON over stdin/stdout |
+| Streamable HTTP | `mcp_protocol.http` | HTTP + SSE via `cohttp-eio`, with session management |
+| In-memory | `mcp_protocol.eio` | Paired channels for zero-IO testing (`Memory_transport`) |
 
 ### Server Primitives
 
@@ -53,7 +55,7 @@ Version negotiation selects the highest mutually-supported version during the in
 
 | Feature | Module | Description |
 |---|---|---|
-| Sampling | `Sampling` | `createMessage` with `model_preferences`, `sampling_tool` list, `sampling_tool_choice` (Auto/None/Tool) |
+| Sampling | `Sampling` | `createMessage` with `model_preferences`, `sampling_tool` list, `sampling_tool_choice` (Auto/None\_/Tool), `include_context` (None\_/ThisServer/AllServers) |
 | Elicitation | `Mcp_types_elicitation` | Form mode (schema-driven) and URL mode. Actions: Accept, Decline, Cancel |
 | Tasks | `Mcp_types_tasks` | Experimental (2025-11-25). Status types: Working, Input_required, Completed, Failed, Cancelled. Classified into `terminal_status` and `active_status` at the type level |
 | Logging | `Logging` | RFC 5424 levels: Debug, Info, Notice, Warning, Error, Critical, Alert, Emergency. `setLevel` request and `notifications/message` |
@@ -76,7 +78,7 @@ Version negotiation selects the highest mutually-supported version during the in
 
 Tools can declare an `output_schema` (JSON Schema). When present, `tool_result.structured_content` carries the typed JSON output alongside the human-readable `content` list.
 
-### OAuth 2.1 (`mcp_protocol_http`)
+### OAuth 2.1 (`mcp_protocol.http`)
 
 | Capability | RFC | Module |
 |---|---|---|
@@ -96,7 +98,7 @@ HTTPS is enabled automatically via `tls-eio` + system CA certificates.
 
 ### Extension Data
 
-All initialize params/results, tool results, and sampling messages carry an optional `_meta` field (`Yojson.Safe.t option`) for passing extension data through the protocol without schema changes.
+All initialize params/results, tool results, prompt results, and sampling messages carry an optional `_meta` field (`Yojson.Safe.t option`) for passing extension data through the protocol without schema changes.
 
 ### Extensions and Experimental
 
@@ -149,9 +151,13 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 1.0.1))
- (mcp_protocol_eio (>= 1.0.1))   ; stdio transport + functor server/client
- (mcp_protocol_http (>= 1.0.1))) ; HTTP transport + OAuth
+ (mcp_protocol (>= 1.1.0)))
+```
+
+Then use sub-libraries in your `dune` file:
+
+```lisp
+(libraries mcp_protocol mcp_protocol.eio mcp_protocol.http)
 ```
 
 ## Usage
@@ -177,7 +183,8 @@ let server =
          let who = match List.assoc_opt "name" args with Some n -> n | None -> "world" in
          Ok Mcp_types.{ description = None;
            messages = [{ role = User;
-             content = PromptText { type_ = "text"; text = "Hello, " ^ who } }] })
+             content = PromptText { type_ = "text"; text = "Hello, " ^ who } }];
+           _meta = None })
 ```
 
 ### In-memory Testing
@@ -284,7 +291,7 @@ Error_codes.tool_execution_error   (* -32004 *)
 
 ## Testing
 
-33 test suites covering types, serialization, transports, server/client lifecycle, OAuth, SSE, and integration scenarios. `Memory_transport` enables deterministic testing with zero IO.
+33 test suites (565 tests) covering types, serialization, transports, server/client lifecycle, OAuth, SSE, and integration scenarios. `Memory_transport` enables deterministic testing with zero IO.
 
 ```bash
 dune runtest
