@@ -30,7 +30,7 @@ let () =
   let server =
     Mcp_protocol_http.Http_server.create
       ~name:"mcp-conformance-server"
-      ~version:"1.2.0"
+      ~version:"1.3.0"
       ~instructions:"Conformance test server for MCP protocol SDK."
       ~enable_logging:true
       ()
