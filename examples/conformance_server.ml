@@ -254,15 +254,25 @@ let () =
              requested_schema = Some {
                type_ = "object";
                properties = [
-                 ("stringField", `Assoc [
+                 ("name", `Assoc [
                    ("type", `String "string");
-                   ("default", `String "default_string");
+                   ("default", `String "John Doe");
                  ]);
-                 ("numberField", `Assoc [
+                 ("age", `Assoc [
+                   ("type", `String "integer");
+                   ("default", `Int 30);
+                 ]);
+                 ("score", `Assoc [
                    ("type", `String "number");
-                   ("default", `Float 42.0);
+                   ("default", `Float 95.5);
                  ]);
-                 ("booleanField", `Assoc [
+                 ("status", `Assoc [
+                   ("type", `String "string");
+                   ("enum", `List [
+                     `String "active"; `String "inactive"; `String "pending"]);
+                   ("default", `String "active");
+                 ]);
+                 ("verified", `Assoc [
                    ("type", `String "boolean");
                    ("default", `Bool true);
                  ]);
@@ -294,11 +304,42 @@ let () =
              requested_schema = Some {
                type_ = "object";
                properties = [
-                 ("choice", `Assoc [
+                 ("untitledSingle", `Assoc [
                    ("type", `String "string");
                    ("enum", `List [
-                     `String "option1"; `String "option2"; `String "option3";
-                     `String "option4"; `String "option5";
+                     `String "option1"; `String "option2"; `String "option3"]);
+                 ]);
+                 ("titledSingle", `Assoc [
+                   ("type", `String "string");
+                   ("oneOf", `List [
+                     `Assoc [("const", `String "value1"); ("title", `String "First Option")];
+                     `Assoc [("const", `String "value2"); ("title", `String "Second Option")];
+                     `Assoc [("const", `String "value3"); ("title", `String "Third Option")];
+                   ]);
+                 ]);
+                 ("legacyEnum", `Assoc [
+                   ("type", `String "string");
+                   ("enum", `List [
+                     `String "opt1"; `String "opt2"; `String "opt3"]);
+                   ("enumNames", `List [
+                     `String "Option One"; `String "Option Two"; `String "Option Three"]);
+                 ]);
+                 ("untitledMulti", `Assoc [
+                   ("type", `String "array");
+                   ("items", `Assoc [
+                     ("type", `String "string");
+                     ("enum", `List [
+                       `String "option1"; `String "option2"; `String "option3"]);
+                   ]);
+                 ]);
+                 ("titledMulti", `Assoc [
+                   ("type", `String "array");
+                   ("items", `Assoc [
+                     ("anyOf", `List [
+                       `Assoc [("const", `String "value1"); ("title", `String "First Choice")];
+                       `Assoc [("const", `String "value2"); ("title", `String "Second Choice")];
+                       `Assoc [("const", `String "value3"); ("title", `String "Third Choice")];
+                     ]);
                    ]);
                  ]);
                ];
