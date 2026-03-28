@@ -318,25 +318,28 @@ let dispatch_jsonrpc_sse s json is_init : Cohttp_eio.Server.response =
     fun writer ->
       Eio.Switch.run (fun sw ->
         Eio.Fiber.fork ~sw (fun () ->
-          let log_level_ref = ref (Atomic.get s.log_level) in
-          let response = Mcp_protocol_eio.Handler.dispatch
-            s.handler ctx log_level_ref parsed_msg in
-          Atomic.set s.log_level !log_level_ref;
-          if is_init then begin
-            (match Http_session.state s.session with
-             | Http_session.Uninitialized ->
-               ignore (Http_session.initialize s.session)
-             | _ -> ());
-            ignore (Http_session.ready s.session)
-          end;
-          (match response with
-           | Some resp_msg ->
-             let json_str = Yojson.Safe.to_string (Jsonrpc.message_to_yojson resp_msg) in
-             let event_id = Http_session.next_event_id s.session in
-             let evt = Sse.event "message" json_str |> Sse.with_id event_id in
-             Eio.Stream.add request_stream (Some evt)
-           | None -> ());
-          Eio.Stream.add request_stream None);
+          Fun.protect
+            (fun () ->
+              let log_level_ref = ref (Atomic.get s.log_level) in
+              let response = Mcp_protocol_eio.Handler.dispatch
+                s.handler ctx log_level_ref parsed_msg in
+              Atomic.set s.log_level !log_level_ref;
+              if is_init then begin
+                (match Http_session.state s.session with
+                 | Http_session.Uninitialized ->
+                   ignore (Http_session.initialize s.session)
+                 | _ -> ());
+                ignore (Http_session.ready s.session)
+              end;
+              (match response with
+               | Some resp_msg ->
+                 let json_str = Yojson.Safe.to_string (Jsonrpc.message_to_yojson resp_msg) in
+                 let event_id = Http_session.next_event_id s.session in
+                 let evt = Sse.event "message" json_str |> Sse.with_id event_id in
+                 Eio.Stream.add request_stream (Some evt)
+               | None -> ()))
+            ~finally:(fun () ->
+              Eio.Stream.add request_stream None));
         let base = Cohttp_eio.Server.respond
           ~headers:(Http.Header.of_list sse_headers)
           ~status:`OK ~body:source () in
