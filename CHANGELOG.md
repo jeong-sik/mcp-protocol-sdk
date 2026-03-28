@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-03-28
+
+### Fixed
+- HTTP server-to-client requests (sampling, elicitation) now work end-to-end
+  over Streamable HTTP. Root cause was a structural deadlock: `Eio.Switch.run`
+  blocked the response closure from reaching cohttp, preventing SSE streaming
+  from starting. Fix: move Switch.run inside the closure (closes #68).
+- Handler fiber wrapped in `Fun.protect` to guarantee SSE stream closure on
+  exception, preventing reader hang.
+
+### Added
+- E2E test: sampling roundtrip via POST-response SSE.
+
 ## [1.2.0] - 2026-03-28
 
 ### Changed
