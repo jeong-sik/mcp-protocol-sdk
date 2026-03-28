@@ -666,6 +666,141 @@ let test_dns_rebinding_subdomain_attack env () =
     let status = Http.Status.to_int (Http.Response.status resp) in
     Alcotest.(check int) "subdomain attack blocked" 403 status)
 
+(* ── Sampling roundtrip via POST-response SSE ── *)
+
+let sampling_tool =
+  Mcp_types.{
+    name = "sample_roundtrip";
+    description = Some "Tool that performs a sampling round-trip";
+    input_schema = `Assoc ["type", `String "object"];
+    title = None;
+    annotations = None;
+    icon = None;
+    output_schema = None;
+    execution = None;
+  }
+
+let sampling_handler ctx _name _args =
+  let open Sampling in
+  let params = {
+    messages = [{ role = User;
+                  content = Text { type_ = "text"; text = "What is 2+2?" } }];
+    model_preferences = None;
+    system_prompt = None;
+    include_context = None;
+    temperature = None;
+    max_tokens = 100;
+    stop_sequences = None;
+    metadata = None;
+    tools = None;
+    tool_choice = None;
+    _meta = None;
+  } in
+  match ctx.Mcp_protocol_eio.Handler.request_sampling params with
+  | Ok result ->
+    let text = match result.content with
+      | Sampling.Text { text; _ } -> text
+      | _ -> "<non-text>"
+    in
+    Ok (Mcp_types.tool_result_of_text (Printf.sprintf "got: %s" text))
+  | Error e ->
+    Ok (Mcp_types.tool_result_of_text (Printf.sprintf "error: %s" e))
+
+let make_sampling_server () =
+  Http_server.create ~name:"test-server" ~version:"1.0.0" ()
+  |> Http_server.add_tool echo_tool echo_handler
+  |> Http_server.add_tool sampling_tool sampling_handler
+
+(** Read SSE events from a Buf_read, yielding (event_type, data) pairs. *)
+let read_sse_event_from_br br =
+  let buf = Buffer.create 256 in
+  let rec loop () =
+    match Eio.Buf_read.line br with
+    | line when String.length line = 0 ->
+      Buffer.contents buf
+    | line ->
+      Buffer.add_string buf line;
+      Buffer.add_char buf '\n';
+      loop ()
+  in
+  loop ()
+
+(** Extract the JSON data from an SSE event text block. *)
+let json_of_sse_event event_text =
+  let lines = String.split_on_char '\n' event_text in
+  let data_parts = List.filter_map (fun l ->
+    if String.length l > 5 && String.sub l 0 5 = "data:" then
+      Some (String.trim (String.sub l 5 (String.length l - 5)))
+    else None
+  ) lines in
+  match data_parts with
+  | [json_str] -> Yojson.Safe.from_string json_str
+  | _ -> `Null
+
+let test_sampling_roundtrip_sse env () =
+  let server = make_sampling_server () in
+  with_sse_server ~env ~server (fun client port ->
+    Eio.Switch.run @@ fun sw ->
+    (* 1. Initialize *)
+    let resp, _body = post_json client ~sw ~headers:[] port "/mcp"
+      (make_initialize_json ()) in
+    let sid = Option.get
+      (Http.Header.get (Http.Response.headers resp) "mcp-session-id") in
+    let _r, _b = post_json client ~sw
+      ~headers:[("mcp-session-id", sid)] port "/mcp"
+      (make_notification_json ()) in
+    (* 2. POST tool call with Accept: text/event-stream *)
+    let call_json =
+      {|{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"sample_roundtrip","arguments":{}}}|} in
+    let body = Cohttp_eio.Body.of_string call_json in
+    let headers = Http.Header.of_list [
+      ("Content-Type", "application/json");
+      ("Accept", "text/event-stream");
+      ("Mcp-Session-Id", sid);
+    ] in
+    let _resp, sse_body = Cohttp_eio.Client.post client ~sw
+      ~body ~headers (base_uri port "/mcp") in
+    let br = Eio.Buf_read.of_flow ~max_size:(64 * 1024) sse_body in
+    (* 3. Read SSE events: expect a sampling request, then the tool result *)
+    let rec read_loop () =
+      let event_text = read_sse_event_from_br br in
+      let json = json_of_sse_event event_text in
+      match json with
+      | `Assoc fields when List.mem_assoc "method" fields ->
+        (* Server-to-client request (sampling/createMessage) *)
+        let method_ = match List.assoc "method" fields with
+          | `String s -> s | _ -> "" in
+        Alcotest.(check string) "sampling method"
+          "sampling/createMessage" method_;
+        let req_id = match List.assoc_opt "id" fields with
+          | Some (`Int i) -> i | _ -> failwith "expected int id" in
+        (* 4. Respond to sampling request via separate POST *)
+        let sampling_response = Printf.sprintf
+          {|{"jsonrpc":"2.0","id":%d,"result":{"role":"assistant","content":{"type":"text","text":"four"},"model":"test-model"}}|}
+          req_id in
+        let _r, _b = post_json client ~sw
+          ~headers:[("Mcp-Session-Id", sid)] port "/mcp"
+          sampling_response in
+        (* Continue reading for the final tool result *)
+        read_loop ()
+      | `Assoc fields when List.mem_assoc "result" fields ->
+        (* Final tool call result *)
+        let result = List.assoc "result" fields in
+        (match result with
+         | `Assoc result_fields ->
+           (match List.assoc_opt "content" result_fields with
+            | Some (`List [`Assoc content_fields]) ->
+              let text = match List.assoc_opt "text" content_fields with
+                | Some (`String s) -> s | _ -> "" in
+              Alcotest.(check string) "sampling result" "got: four" text
+            | _ -> Alcotest.fail "expected content list")
+         | _ -> Alcotest.fail "expected result object")
+      | _ ->
+        (* Skip other events (e.g., id-only lines) *)
+        read_loop ()
+    in
+    read_loop ())
+
 (* ── Test suite ──────────────────────────────── *)
 
 let () =
@@ -715,5 +850,9 @@ let () =
     "batch_rejection", [
       Alcotest.test_case "batch rejected" `Quick (test_post_batch_rejected env);
       Alcotest.test_case "empty batch rejected" `Quick (test_post_empty_batch_rejected env);
+    ];
+    "sampling_sse", [
+      Alcotest.test_case "sampling roundtrip via SSE" `Quick
+        (test_sampling_roundtrip_sse env);
     ];
   ]
