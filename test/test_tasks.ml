@@ -248,6 +248,69 @@ let test_classified_status () =
   in
   List.iter check_roundtrip [Working; Input_required; Completed; Failed; Cancelled]
 
+(* --- valid_transitions --- *)
+
+let test_valid_transitions_working () =
+  let allowed = Mcp_types.valid_transitions Working in
+  List.iter (fun s ->
+    Alcotest.(check bool) (Printf.sprintf "working -> %s"
+      (Yojson.Safe.to_string (Mcp_types.task_status_to_yojson s)))
+      true (List.mem s allowed)
+  ) [Working; Input_required; Completed; Failed; Cancelled]
+
+let test_valid_transitions_input_required () =
+  let allowed = Mcp_types.valid_transitions Input_required in
+  List.iter (fun s ->
+    Alcotest.(check bool) (Printf.sprintf "input_required -> %s"
+      (Yojson.Safe.to_string (Mcp_types.task_status_to_yojson s)))
+      true (List.mem s allowed)
+  ) [Working; Completed; Failed; Cancelled];
+  Alcotest.(check bool) "input_required -> input_required disallowed"
+    false (List.mem Mcp_types.Input_required allowed)
+
+let test_valid_transitions_terminal () =
+  List.iter (fun status ->
+    let allowed = Mcp_types.valid_transitions status in
+    Alcotest.(check int) "terminal has no transitions" 0 (List.length allowed)
+  ) [Completed; Failed; Cancelled]
+
+(* --- transition --- *)
+
+let test_transition_valid () =
+  let t0 = Mcp_types.make_task ~task_id:"t1" ~created_at:"2025-01-01T00:00:00Z" () in
+  match Mcp_types.transition t0 ~next_status:Completed ~updated_at:"2025-01-01T00:01:00Z" with
+  | Ok t1 ->
+    Alcotest.(check json) "completed" (`String "completed")
+      (Mcp_types.task_status_to_yojson t1.status);
+    Alcotest.(check string) "updated_at changed"
+      "2025-01-01T00:01:00Z" t1.last_updated_at
+  | Error e -> Alcotest.fail e
+
+let test_transition_invalid_terminal () =
+  let t0 = { (Mcp_types.make_task ~task_id:"t2" ~created_at:"2025-01-01T00:00:00Z" ())
+             with status = Completed } in
+  match Mcp_types.transition t0 ~next_status:Working ~updated_at:"2025-01-01T00:02:00Z" with
+  | Error _ -> ()
+  | Ok _ -> Alcotest.fail "expected error for completed -> working"
+
+let test_transition_working_to_working () =
+  let t0 = Mcp_types.make_task ~task_id:"t3" ~created_at:"2025-01-01T00:00:00Z" () in
+  match Mcp_types.transition t0 ~next_status:Working ~updated_at:"2025-01-01T00:00:30Z" with
+  | Ok t1 ->
+    Alcotest.(check json) "still working" (`String "working")
+      (Mcp_types.task_status_to_yojson t1.status)
+  | Error e -> Alcotest.fail e
+
+(* --- with_message --- *)
+
+let test_with_message () =
+  let t0 = Mcp_types.make_task ~task_id:"t4" ~created_at:"2025-01-01T00:00:00Z" () in
+  let t1 = Mcp_types.with_message t0 ~message:"step 2" ~updated_at:"2025-01-01T00:00:10Z" in
+  Alcotest.(check (option string)) "message set" (Some "step 2") t1.status_message;
+  Alcotest.(check string) "updated_at" "2025-01-01T00:00:10Z" t1.last_updated_at;
+  Alcotest.(check json) "status unchanged" (`String "working")
+    (Mcp_types.task_status_to_yojson t1.status)
+
 (* --- Suite --- *)
 
 let () =
@@ -284,5 +347,18 @@ let () =
     ];
     "classified_status", [
       Alcotest.test_case "classify and roundtrip" `Quick test_classified_status;
+    ];
+    "valid_transitions", [
+      Alcotest.test_case "working" `Quick test_valid_transitions_working;
+      Alcotest.test_case "input_required" `Quick test_valid_transitions_input_required;
+      Alcotest.test_case "terminal" `Quick test_valid_transitions_terminal;
+    ];
+    "transition", [
+      Alcotest.test_case "valid" `Quick test_transition_valid;
+      Alcotest.test_case "invalid terminal" `Quick test_transition_invalid_terminal;
+      Alcotest.test_case "working to working" `Quick test_transition_working_to_working;
+    ];
+    "with_message", [
+      Alcotest.test_case "update message" `Quick test_with_message;
     ];
   ]
