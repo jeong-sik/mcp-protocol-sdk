@@ -89,23 +89,26 @@ let list t ?status ?cursor ?(limit = 100) () =
       | None -> all_entries
       | Some s -> List.filter (fun (task : Mcp_types.task) -> task.status = s) all_entries
     in
-    (* Sort by created_at ascending for stable pagination *)
+    (* Sort by task_id ascending for stable pagination.
+       task_id is auto-incrementing ("task-<N>") so it provides a
+       unique, monotonic cursor — unlike created_at which may collide
+       when multiple tasks are created within the same timestamp. *)
     let sorted = List.sort (fun (a : Mcp_types.task) (b : Mcp_types.task) ->
-      String.compare a.created_at b.created_at) filtered
+      String.compare a.task_id b.task_id) filtered
     in
-    (* Apply cursor: skip tasks with created_at <= cursor *)
+    (* Apply cursor: skip tasks with task_id <= cursor *)
     let after_cursor = match cursor with
       | None -> sorted
       | Some c ->
         List.filter (fun (task : Mcp_types.task) ->
-          String.compare task.created_at c > 0) sorted
+          String.compare task.task_id c > 0) sorted
     in
     (* Apply limit *)
     let page = List.filteri (fun i _ -> i < limit) after_cursor in
     let next_cursor =
       if List.length after_cursor > limit then
         match List.rev page with
-        | last :: _ -> Some last.Mcp_types.created_at
+        | last :: _ -> Some last.Mcp_types.task_id
         | [] -> None
       else None
     in

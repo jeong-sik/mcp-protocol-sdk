@@ -1,7 +1,8 @@
 (** In-memory task lifecycle store.
 
     Provides an ergonomic API for managing MCP async task state.
-    Thread-safe under Eio via [Eio.Mutex].
+    Thread-safe via [Stdlib.Mutex] (non-yielding, works in both Eio
+    and non-Eio contexts).
 
     Usage:
     {[
