@@ -177,6 +177,30 @@ let task_execution_support_of_yojson = function
   | `String "forbidden" -> Ok Task_forbidden
   | _ -> Error "task_execution_support: expected 'required', 'optional', or 'forbidden'"
 
+(** Valid state transitions per MCP spec.
+    Working      -> Working | Input_required | Completed | Failed | Cancelled
+    Input_required -> Working | Completed | Failed | Cancelled
+    Terminal states (Completed, Failed, Cancelled) have no outgoing transitions. *)
+let valid_transitions = function
+  | Working -> [Working; Input_required; Completed; Failed; Cancelled]
+  | Input_required -> [Working; Completed; Failed; Cancelled]
+  | Completed | Failed | Cancelled -> []
+
+(** Attempt a state transition. Returns [Ok task'] with updated status and
+    last_updated_at, or [Error reason] if the transition is invalid. *)
+let transition (t : task) ~next_status ~updated_at =
+  let allowed = valid_transitions t.status in
+  if List.mem next_status allowed then
+    Ok { t with status = next_status; last_updated_at = updated_at }
+  else
+    let pp s = match task_status_to_yojson s with `String s -> s | _ -> "?" in
+    Error (Printf.sprintf "invalid transition: %s -> %s" (pp t.status) (pp next_status))
+
+(** Return a copy with an updated status_message and last_updated_at.
+    Does not change the status itself. *)
+let with_message (t : task) ~message ~updated_at =
+  { t with status_message = Some message; last_updated_at = updated_at }
+
 (** Convenience: create a task in working state. *)
 let make_task ~task_id ~created_at ?status_message ?ttl ?poll_interval () =
   { task_id; status = Working; status_message;

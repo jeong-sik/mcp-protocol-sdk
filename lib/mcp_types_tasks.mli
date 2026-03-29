@@ -70,6 +70,18 @@ type task_execution_support = Task_required | Task_optional | Task_forbidden
 val task_execution_support_to_yojson : task_execution_support -> Yojson.Safe.t
 val task_execution_support_of_yojson : Yojson.Safe.t -> (task_execution_support, string) result
 
+(** Valid next states for a given status. Terminal states return [[]]. *)
+val valid_transitions : task_status -> task_status list
+
+(** Attempt a state transition. Returns [Ok task'] with updated status and
+    last_updated_at, or [Error reason] if the transition is invalid.
+    Terminal states reject all transitions. *)
+val transition : task -> next_status:task_status -> updated_at:string -> (task, string) result
+
+(** Return a copy with an updated status_message and last_updated_at.
+    Does not change the status itself. *)
+val with_message : task -> message:string -> updated_at:string -> task
+
 val make_task :
   task_id:string -> created_at:string ->
   ?status_message:string -> ?ttl:int -> ?poll_interval:int ->
