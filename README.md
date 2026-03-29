@@ -64,6 +64,36 @@ Version negotiation selects the highest mutually-supported version during the in
 | Progress | `Mcp_result` | Progress notifications with `progress_token`, `progress`, `total`, and `message` fields |
 | Cancellation | `Mcp_result` | Cancel in-flight requests by `request_id` with optional `reason` |
 
+### Async Tasks
+
+Async tasks are substrate-owned MCP primitives. The SDK provides the wire types (`Mcp_types_tasks`) and an in-memory lifecycle store (`Task_store`) for servers.
+
+**What the substrate guarantees:**
+- Task state machine: Working -> Completed | Failed | Cancelled | Input_required. Invalid transitions return errors.
+- Wire handlers for `tasks/get`, `tasks/list`, `tasks/cancel` via `add_task_handlers`.
+- GC of terminal tasks via `Task_store.gc_terminal`.
+- Thread-safe store using `Stdlib.Mutex` (works in both Eio and non-Eio contexts).
+
+**What downstream runtimes adapt:**
+- When to create tasks (e.g., long-running tool calls).
+- How to poll or push task progress to clients.
+- Persistence beyond process lifetime (the store is in-memory by default).
+
+**Server recipe:**
+
+```ocaml
+let store = Task_store.create () in
+let server =
+  Server.create ~name:"my-server" ~version:"1.0.0" ()
+  |> Server.add_task_handlers (Task_store.to_task_handlers store)
+in
+(* In a tool handler: create a task, do work, update status *)
+let task = Task_store.create_task store () in
+(* ... run work in a fiber ... *)
+Task_store.update_status store task.task_id Completed
+  ~updated_at:(string_of_float (Unix.gettimeofday ())) |> ignore
+```
+
 ### Content Types
 
 | Type | Variant | Fields |
