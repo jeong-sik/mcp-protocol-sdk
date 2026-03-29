@@ -74,15 +74,16 @@ let media_type_matches ~pattern ~actual =
 let accepts_sse header =
   let media_types = parse_accept_header header in
   List.exists (fun mt ->
-    mt.type_ = "text" && mt.subtype = "event-stream"
+    mt.quality > 0.0 && mt.type_ = "text" && mt.subtype = "event-stream"
   ) media_types
 
 (** Check if client accepts JSON *)
 let accepts_json header =
   let media_types = parse_accept_header header in
   List.exists (fun mt ->
-    (mt.type_ = "application" && mt.subtype = "json") ||
-    (mt.type_ = "*" && mt.subtype = "*")
+    mt.quality > 0.0 &&
+    ((mt.type_ = "application" && mt.subtype = "json") ||
+     (mt.type_ = "*" && mt.subtype = "*"))
   ) media_types
 
 (** Check if client accepts streamable MCP (JSON or SSE) *)

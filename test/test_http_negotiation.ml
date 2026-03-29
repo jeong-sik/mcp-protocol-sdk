@@ -82,7 +82,11 @@ let test_accepts_sse () =
   Alcotest.(check bool) "sse header"
     true (Http_negotiation.accepts_sse "text/event-stream, application/json");
   Alcotest.(check bool) "no sse"
-    false (Http_negotiation.accepts_sse "application/json")
+    false (Http_negotiation.accepts_sse "application/json");
+  Alcotest.(check bool) "sse q=0 rejected (RFC 7231)"
+    false (Http_negotiation.accepts_sse "text/event-stream;q=0");
+  Alcotest.(check bool) "sse q=0.0 rejected"
+    false (Http_negotiation.accepts_sse "text/event-stream;q=0.0")
 
 let test_accepts_json () =
   Alcotest.(check bool) "json header"
@@ -90,7 +94,11 @@ let test_accepts_json () =
   Alcotest.(check bool) "wildcard accepts json"
     true (Http_negotiation.accepts_json "*/*");
   Alcotest.(check bool) "sse only"
-    false (Http_negotiation.accepts_json "text/event-stream")
+    false (Http_negotiation.accepts_json "text/event-stream");
+  Alcotest.(check bool) "json q=0 rejected (RFC 7231)"
+    false (Http_negotiation.accepts_json "application/json;q=0");
+  Alcotest.(check bool) "wildcard q=0 rejected"
+    false (Http_negotiation.accepts_json "*/*;q=0")
 
 let test_accepts_streamable_mcp () =
   Alcotest.(check bool) "json + sse"
