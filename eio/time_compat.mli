@@ -40,6 +40,10 @@ val sleep : float -> unit
 (** Sleep for the given duration in seconds. Uses [Eio.Time.sleep].
     @raise Failure if no Eio clock has been set via {!set_clock}. *)
 
+val check_initialized : unit -> (unit, string) result
+(** Check that the clock has been initialized. Call at startup to catch
+    missing {!set_clock} early instead of at the first {!sleep} call. *)
+
 val timed : (unit -> 'a) -> 'a * float
 (** [timed f] runs [f ()] and returns [(result, duration_seconds)]. *)
 

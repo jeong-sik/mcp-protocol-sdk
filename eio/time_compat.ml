@@ -61,7 +61,14 @@ let sleep seconds =
   match !global_clock with
   | Some clock -> Eio.Time.sleep clock seconds
   | None ->
-    failwith "Time_compat.sleep: no Eio clock set. Call Time_compat.set_clock at startup."
+    failwith "Time_compat: clock not initialized. Call Time_compat.set_clock during Eio.main before using sleep."
+
+(** Check that the clock has been initialized. Call at startup to catch
+    missing [set_clock] early instead of at the first [sleep] call. *)
+let check_initialized () : (unit, string) result =
+  match !global_clock with
+  | Some _ -> Ok ()
+  | None -> Error "Time_compat: clock not initialized. Call set_clock during Eio.main."
 
 (** Measure execution time of a function
 
