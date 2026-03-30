@@ -29,7 +29,7 @@ type t = {
   headers : (string * string) list;
 }
 
-let default_timeout = 60.0
+let default_timeout = Mcp_protocol.Defaults.default_timeout
 
 (* ── construction ────────────────────────────── *)
 
@@ -151,7 +151,7 @@ let post_json t body_json =
    | None -> ());
   let status = Http.Response.status resp in
   let body_str =
-    Eio.Buf_read.of_flow ~max_size:(10 * 1024 * 1024) resp_body
+    Eio.Buf_read.of_flow ~max_size:Http_limits.default_max_response_size resp_body
     |> Eio.Buf_read.take_all
   in
   (status, resp_headers, body_str)
@@ -405,7 +405,7 @@ let close t =
           ~headers t.endpoint
       in
       let _body_str =
-        Eio.Buf_read.of_flow ~max_size:(1024 * 1024) body
+        Eio.Buf_read.of_flow ~max_size:Http_limits.oauth_max_response_size body
         |> Eio.Buf_read.take_all
       in
       Http.Response.status resp

@@ -23,6 +23,7 @@ module Protocol = Protocol
 module Resources = Resources
 module Result_extra = Result_extra
 module Pagination = Pagination
+module Defaults = Defaults
 
 (** {1 Convenience Re-exports} *)
 

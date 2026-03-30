@@ -542,7 +542,7 @@ let callback s ?(prefix="/mcp") _conn request body =
          to avoid double-parsing (previously parsed for is_init check in
          callback AND again in handle_post). *)
       begin match
-        Eio.Buf_read.of_flow ~max_size:(10 * 1024 * 1024) body
+        Eio.Buf_read.of_flow ~max_size:Http_limits.default_max_request_size body
         |> Eio.Buf_read.take_all
       with
       | body_str ->

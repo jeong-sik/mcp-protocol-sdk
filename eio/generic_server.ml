@@ -104,7 +104,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
 
   (* ── server request sending ──────────────────────────── *)
 
-  let default_timeout = 60.0
+  let default_timeout = Mcp_protocol.Defaults.default_timeout
 
   let server_read_response transport ?clock expected_id =
     let do_read () =
