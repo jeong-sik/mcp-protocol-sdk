@@ -55,12 +55,24 @@ let add_task_handlers handlers s =
 let json_content_type = "application/json"
 let sse_content_type = "text/event-stream"
 
-let cors_headers = [
-  ("Access-Control-Allow-Origin", "*");
+(** Shared CORS headers that do not include [Access-Control-Allow-Origin]. *)
+let cors_headers_common = [
   ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   ("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version");
   ("Access-Control-Expose-Headers", "Mcp-Session-Id");
 ]
+
+(** CORS headers for validated requests.  When a concrete [origin] was sent
+    by the client, echo it back; when the Origin header was absent
+    (same-origin / non-browser) fall back to ["*"]. *)
+let cors_headers_for origin =
+  let allow = match origin with Some o -> o | None -> "*" in
+  ("Access-Control-Allow-Origin", allow) :: cors_headers_common
+
+(** CORS headers without [Access-Control-Allow-Origin].
+    Used for error responses when origin validation fails so that the
+    browser correctly blocks the response. *)
+let cors_headers_no_origin = cors_headers_common
 
 (* ── DNS rebinding protection (MCP 2025-11-25) ── *)
 
@@ -74,28 +86,27 @@ let is_localhost_origin origin =
     List.mem h ["localhost"; "127.0.0.1"; "::1"; "[::1]"]
   | _ -> false
 
-(** Validate Origin header. Returns [Ok ()] if safe, [Error msg] if blocked.
-    - No Origin: allowed (same-origin requests omit it)
-    - Localhost origin (with any port): allowed
-    - Non-localhost origin: blocked *)
+(** Validate Origin header.  Returns [Ok origin_opt] where [origin_opt] is
+    [Some origin] for a valid localhost origin or [None] when the header is
+    absent.  Returns [Error msg] for non-localhost origins. *)
 let validate_origin request =
   match Http.Header.get (Http.Request.headers request) "origin" with
-  | None -> Ok ()
+  | None -> Ok None
   | Some origin ->
-    if is_localhost_origin origin then Ok ()
+    if is_localhost_origin origin then Ok (Some origin)
     else Error (Printf.sprintf "Origin %S is not a localhost origin" origin)
 
-let respond_json ~status body =
+let respond_json ?(cors=cors_headers_common) ~status body =
   let json_str = Yojson.Safe.to_string body in
-  let headers = ("Content-Type", json_content_type) :: cors_headers in
+  let headers = ("Content-Type", json_content_type) :: cors in
   Cohttp_eio.Server.respond_string
     ~headers:(Http.Header.of_list headers)
     ~status ~body:json_str ()
 
-let respond_json_with_session session ~status body =
+let respond_json_with_session ~origin session ~status body =
   let headers = ("Content-Type", json_content_type)
     :: ("Mcp-Protocol-Version", Version.latest)
-    :: cors_headers in
+    :: (cors_headers_for origin) in
   let headers = match Http_session.session_id session with
     | Some sid -> (Http_session.header_name, sid) :: headers
     | None -> headers
@@ -104,8 +115,8 @@ let respond_json_with_session session ~status body =
     ~headers:(Http.Header.of_list headers)
     ~status ~body:(Yojson.Safe.to_string body) ()
 
-let respond_empty ~status ?(extra_headers=[]) session =
-  let headers = extra_headers @ cors_headers in
+let respond_empty ~origin ~status ?(extra_headers=[]) session =
+  let headers = extra_headers @ (cors_headers_for origin) in
   let headers = match Http_session.session_id session with
     | Some sid -> (Http_session.header_name, sid) :: headers
     | None -> headers
@@ -230,13 +241,14 @@ let make_context ?(request_stream : Sse.event option Eio.Stream.t option) s
 let get_session_header request =
   Http.Header.get (Http.Request.headers request) Http_session.header_name
 
-let validate_session_or_error session request =
+let validate_session_or_error ~origin session request =
   match Http_session.validate session (get_session_header request) with
   | Ok () -> Ok ()
   | Error (`Bad_request msg) ->
-    Error (respond_json ~status:`Bad_request (`Assoc ["error", `String msg]))
+    Error (respond_json ~cors:(cors_headers_for origin) ~status:`Bad_request
+      (`Assoc ["error", `String msg]))
   | Error `Not_found ->
-    Error (respond_json ~status:`Not_found
+    Error (respond_json ~cors:(cors_headers_for origin) ~status:`Not_found
       (`Assoc ["error", `String "Session not found"]))
 
 (* ── dispatch logic ──────────────────────────── *)
@@ -253,14 +265,14 @@ let accepts_sse request =
   | None -> false
 
 (** Parse JSON-RPC and dispatch through handler, returning a direct JSON response. *)
-let dispatch_jsonrpc s json is_init : Cohttp_eio.Server.response =
+let dispatch_jsonrpc ~origin s json is_init : Cohttp_eio.Server.response =
   let msg = Jsonrpc.message_of_yojson json in
   match msg with
   | Error parse_err ->
     let err = Jsonrpc.make_error ~id:(Jsonrpc.Int 0)
       ~code:Error_codes.parse_error
       ~message:(Printf.sprintf "JSON-RPC parse error: %s" parse_err) () in
-    respond_json_with_session s.session ~status:`OK
+    respond_json_with_session ~origin s.session ~status:`OK
       (Jsonrpc.message_to_yojson err)
   | Ok parsed_msg ->
     let ctx = make_context s in
@@ -277,10 +289,10 @@ let dispatch_jsonrpc s json is_init : Cohttp_eio.Server.response =
     end;
     (match response with
      | Some resp_msg ->
-       respond_json_with_session s.session ~status:`OK
+       respond_json_with_session ~origin s.session ~status:`OK
          (Jsonrpc.message_to_yojson resp_msg)
      | None ->
-       respond_empty ~status:`Accepted s.session)
+       respond_empty ~origin ~status:`Accepted s.session)
 
 (** Dispatch via POST-response SSE streaming.
     Notifications and the final result are sent as SSE events in the response body.
@@ -290,14 +302,14 @@ let dispatch_jsonrpc s json is_init : Cohttp_eio.Server.response =
     Previous structure had Switch.run outside the closure, causing a deadlock:
     Switch waited for the handler fiber (blocked on Promise.await) before
     returning the closure to cohttp, so streaming never started. *)
-let dispatch_jsonrpc_sse s json is_init : Cohttp_eio.Server.response =
+let dispatch_jsonrpc_sse ~origin s json is_init : Cohttp_eio.Server.response =
   let msg = Jsonrpc.message_of_yojson json in
   match msg with
   | Error parse_err ->
     let err = Jsonrpc.make_error ~id:(Jsonrpc.Int 0)
       ~code:Error_codes.parse_error
       ~message:(Printf.sprintf "JSON-RPC parse error: %s" parse_err) () in
-    respond_json_with_session s.session ~status:`OK
+    respond_json_with_session ~origin s.session ~status:`OK
       (Jsonrpc.message_to_yojson err)
   | Ok parsed_msg ->
     let request_stream : Sse.event option Eio.Stream.t = Eio.Stream.create 64 in
@@ -307,7 +319,7 @@ let dispatch_jsonrpc_sse s json is_init : Cohttp_eio.Server.response =
         ("Cache-Control", "no-cache");
         ("Connection", "keep-alive");
         ("Mcp-Protocol-Version", Version.latest);
-      ] @ cors_headers
+      ] @ (cors_headers_for origin)
     in
     let sse_headers = match Http_session.session_id s.session with
       | Some sid -> (Http_session.header_name, sid) :: sse_headers
@@ -348,18 +360,19 @@ let dispatch_jsonrpc_sse s json is_init : Cohttp_eio.Server.response =
 (* ── POST handler ────────────────────────────── *)
 
 (** H5 fix: Accept pre-parsed JSON to avoid double-parsing in callback. *)
-let handle_post_parsed s request json_result : Cohttp_eio.Server.response =
+let handle_post_parsed ~origin s request json_result : Cohttp_eio.Server.response =
+  let cors = cors_headers_for origin in
   match json_result with
   | Error msg ->
     let err = Jsonrpc.make_error ~id:(Jsonrpc.Int 0)
       ~code:Error_codes.parse_error
       ~message:(Printf.sprintf "JSON parse error: %s" msg) () in
-    respond_json ~status:`OK (Jsonrpc.message_to_yojson err)
+    respond_json ~cors ~status:`OK (Jsonrpc.message_to_yojson err)
   | Ok (`List _) ->
     let err = Jsonrpc.make_error ~id:(Jsonrpc.Null)
       ~code:Error_codes.invalid_request
       ~message:"JSON-RPC batching is not supported" () in
-    respond_json ~status:`OK (Jsonrpc.message_to_yojson err)
+    respond_json ~cors ~status:`OK (Jsonrpc.message_to_yojson err)
   | Ok json ->
     (* Check if this is a client response to a server-initiated request *)
     let resolved = match Jsonrpc.message_of_yojson json with
@@ -392,30 +405,30 @@ let handle_post_parsed s request json_result : Cohttp_eio.Server.response =
       | _ -> false
     in
     if resolved then
-      respond_empty ~status:`Accepted s.session
+      respond_empty ~origin ~status:`Accepted s.session
     else begin
       let is_init = is_initialize_request json in
       let dispatch = if accepts_sse request && not is_init
-        then dispatch_jsonrpc_sse else dispatch_jsonrpc in
+        then dispatch_jsonrpc_sse ~origin else dispatch_jsonrpc ~origin in
       if is_init then
         dispatch s json true
       else
-        match validate_session_or_error s.session request with
+        match validate_session_or_error ~origin s.session request with
         | Error resp -> resp
         | Ok () -> dispatch s json false
     end
 
-let _handle_post s request body_str : Cohttp_eio.Server.response =
+let _handle_post ~origin s request body_str : Cohttp_eio.Server.response =
   let json_result =
     try Ok (Yojson.Safe.from_string body_str)
     with Yojson.Json_error msg -> Error msg
   in
-  handle_post_parsed s request json_result
+  handle_post_parsed ~origin s request json_result
 
 (* ── GET handler (SSE) ───────────────────────── *)
 
-let handle_get s request : Cohttp_eio.Server.response =
-  match validate_session_or_error s.session request with
+let handle_get ~origin s request : Cohttp_eio.Server.response =
+  match validate_session_or_error ~origin s.session request with
   | Error resp -> resp
   | Ok () ->
     let client_id, stream = Sse.Broadcaster.subscribe s.broadcaster in
@@ -425,7 +438,7 @@ let handle_get s request : Cohttp_eio.Server.response =
         ("Cache-Control", "no-cache");
         ("Connection", "keep-alive");
         ("X-Accel-Buffering", "no");
-      ] @ cors_headers
+      ] @ (cors_headers_for origin)
     in
     let sse_headers = match Http_session.session_id s.session with
       | Some sid -> (Http_session.header_name, sid) :: sse_headers
@@ -444,24 +457,24 @@ let handle_get s request : Cohttp_eio.Server.response =
 
 (* ── DELETE handler ──────────────────────────── *)
 
-let handle_delete s request : Cohttp_eio.Server.response =
-  match validate_session_or_error s.session request with
+let handle_delete ~origin s request : Cohttp_eio.Server.response =
+  match validate_session_or_error ~origin s.session request with
   | Error resp -> resp
   | Ok () ->
     Sse.Broadcaster.shutdown s.broadcaster;
     Http_session.close s.session;
-    respond_empty ~status:`OK s.session
+    respond_empty ~origin ~status:`OK s.session
 
 (* ── OPTIONS handler ─────────────────────────── *)
 
-let handle_options session : Cohttp_eio.Server.response =
-  respond_empty ~status:`OK session
+let handle_options ~origin session : Cohttp_eio.Server.response =
+  respond_empty ~origin ~status:`OK session
 
 (* ── main callback ───────────────────────────── *)
 
 (* ── well-known endpoint (RFC 9728) ─────────── *)
 
-let handle_well_known_resource s : Cohttp_eio.Server.response =
+let handle_well_known_resource ~origin s : Cohttp_eio.Server.response =
   match s.auth with
   | None ->
     Cohttp_eio.Server.respond_string
@@ -470,7 +483,7 @@ let handle_well_known_resource s : Cohttp_eio.Server.response =
     let metadata = Auth_middleware.resource_metadata auth_config in
     let json = Auth.protected_resource_metadata_to_yojson metadata in
     let headers = Http.Header.of_list
-      (("Content-Type", json_content_type) :: cors_headers) in
+      (("Content-Type", json_content_type) :: (cors_headers_for origin)) in
     Cohttp_eio.Server.respond_string
       ~headers ~status:`OK
       ~body:(Yojson.Safe.to_string json) ()
@@ -488,9 +501,14 @@ let check_auth_if_configured s request =
 let callback s ?(prefix="/mcp") _conn request body =
   let path = Http.Request.resource request in
   let meth = Http.Request.meth request in
-  (* RFC 9728: Protected Resource Metadata *)
+  (* RFC 9728: Protected Resource Metadata — extract origin for CORS. *)
+  let well_known_origin =
+    match Http.Header.get (Http.Request.headers request) "origin" with
+    | Some o when is_localhost_origin o -> Some o
+    | _ -> None
+  in
   if path = "/.well-known/oauth-protected-resource" && meth = `GET then
-    handle_well_known_resource s
+    handle_well_known_resource ~origin:well_known_origin s
   else if path <> prefix && not (String.length path > String.length prefix
      && String.sub path 0 (String.length prefix) = prefix) then
     Cohttp_eio.Server.respond_string
@@ -499,9 +517,11 @@ let callback s ?(prefix="/mcp") _conn request body =
     (* MCP 2025-11-25: DNS rebinding protection. *)
     match validate_origin request with
     | Error msg ->
-      respond_json ~status:`Forbidden
+      (* Origin validation failed: respond WITHOUT Access-Control-Allow-Origin
+         so the browser blocks the response (the whole point of the check). *)
+      respond_json ~cors:cors_headers_no_origin ~status:`Forbidden
         (`Assoc ["error", `String msg])
-    | Ok () ->
+    | Ok origin ->
     (* MCP 2025-11-25: Mcp-Protocol-Version header validation for Streamable HTTP.
        The header is required on POST (except initialize) and GET requests. *)
     let version_ok =
@@ -512,7 +532,7 @@ let callback s ?(prefix="/mcp") _conn request body =
     if not version_ok then
       Cohttp_eio.Server.respond_string
         ~status:`Not_acceptable
-        ~headers:(Http.Header.of_list cors_headers)
+        ~headers:(Http.Header.of_list (cors_headers_for origin))
         ~body:(Printf.sprintf {|{"error":"Unsupported MCP protocol version. Supported: %s"}|}
           Version.latest) ()
     else
@@ -535,28 +555,28 @@ let callback s ?(prefix="/mcp") _conn request body =
           | Error _ -> false
         in
         if is_init then
-          handle_post_parsed s request json_result
+          handle_post_parsed ~origin s request json_result
         else begin
           match check_auth_if_configured s request with
           | Error resp -> resp
-          | Ok () -> handle_post_parsed s request json_result
+          | Ok () -> handle_post_parsed ~origin s request json_result
         end
       | exception Eio.Buf_read.Buffer_limit_exceeded ->
-        respond_json ~status:`Request_entity_too_large
+        respond_json ~cors:(cors_headers_for origin) ~status:`Request_entity_too_large
           (`Assoc ["error", `String "Request body too large (max 10MB)"])
       end
     | `GET ->
       begin match check_auth_if_configured s request with
       | Error resp -> resp
-      | Ok () -> handle_get s request
+      | Ok () -> handle_get ~origin s request
       end
     | `DELETE ->
       begin match check_auth_if_configured s request with
       | Error resp -> resp
-      | Ok () -> handle_delete s request
+      | Ok () -> handle_delete ~origin s request
       end
     | `OPTIONS ->
-      handle_options s.session
+      handle_options ~origin s.session
     | _ ->
       Cohttp_eio.Server.respond_string
         ~status:`Method_not_allowed
