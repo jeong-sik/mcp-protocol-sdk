@@ -86,6 +86,9 @@ module Result_extra = Result_extra
 (** Cursor-based pagination with loop detection *)
 module Pagination = Pagination
 
+(** SDK-wide default values *)
+module Defaults = Defaults
+
 (** {1 Convenience Re-exports} *)
 
 (** Protocol version string *)

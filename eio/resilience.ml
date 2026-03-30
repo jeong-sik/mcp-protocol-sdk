@@ -24,12 +24,36 @@ type retry_policy = {
   jitter: bool;
 }
 
+(** Read an environment variable as int, returning [default] on missing or
+    unparseable values. *)
+let env_int name default =
+  match Sys.getenv_opt name with
+  | None -> default
+  | Some s -> (match int_of_string_opt s with Some v -> v | None -> default)
+
+(** Read an environment variable as float, returning [default] on missing or
+    unparseable values. *)
+let env_float name default =
+  match Sys.getenv_opt name with
+  | None -> default
+  | Some s -> (match float_of_string_opt s with Some v -> v | None -> default)
+
+(** Read an environment variable as bool ("true"/"1" -> true, else default). *)
+let env_bool name default =
+  match Sys.getenv_opt name with
+  | None -> default
+  | Some s ->
+    let lower = String.lowercase_ascii s in
+    if lower = "true" || lower = "1" then true
+    else if lower = "false" || lower = "0" then false
+    else default
+
 let default_policy = {
-  max_attempts = 3;
-  initial_delay_ms = 100;
-  max_delay_ms = 10000;
-  backoff_multiplier = 2.0;
-  jitter = true;
+  max_attempts = env_int "MCP_RETRY_MAX_ATTEMPTS" 3;
+  initial_delay_ms = env_int "MCP_RETRY_INITIAL_DELAY_MS" 100;
+  max_delay_ms = env_int "MCP_RETRY_MAX_DELAY_MS" 10000;
+  backoff_multiplier = env_float "MCP_RETRY_BACKOFF_MULTIPLIER" 2.0;
+  jitter = env_bool "MCP_RETRY_JITTER" true;
 }
 
 (* ============================================ *)

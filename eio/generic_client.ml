@@ -28,7 +28,7 @@ module Make (T : Mcp_protocol.Transport.S) = struct
     timeout_fn: timeout_fn option;
   }
 
-  let default_timeout = 60.0
+  let default_timeout = Mcp_protocol.Defaults.default_timeout
 
   let create ~transport ?clock () =
     let timeout_fn = match clock with

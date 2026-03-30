@@ -74,10 +74,7 @@ let build_authorization_url
 
 (* ── constants ─────────────────────────────── *)
 
-(** L1 fix: Maximum response body size for OAuth HTTP responses (1 MB).
-    Extracted from 3 hardcoded occurrences. Override by passing ~max_response_size
-    to individual functions if needed in the future. *)
-let default_max_response_size = 1024 * 1024
+let default_max_response_size = Http_limits.oauth_max_response_size
 
 (* ── HTTP helpers ───────────────────────────── *)
 
