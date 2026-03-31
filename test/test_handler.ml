@@ -243,7 +243,7 @@ let test_parse_list_field_reports_failures () =
   | Ok _ -> Alcotest.fail "expected invalid item error"
   | Error e ->
     Alcotest.(check bool) "mentions item index" true
-      (String.contains e '1')
+      (String.equal e "Invalid 'items' item at index 1: not string")
 
 (* ── build_initialize_params ─────────────────── *)
 

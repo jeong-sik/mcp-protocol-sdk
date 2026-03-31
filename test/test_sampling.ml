@@ -91,6 +91,15 @@ let test_model_preferences_minimal () =
     Alcotest.(check bool) "no cost" true (Option.is_none p'.cost_priority)
   | Error e -> Alcotest.fail e
 
+let test_model_preferences_invalid_hint_fails () =
+  let json =
+    `Assoc [
+      ("hints", `List [ `String "not-an-object" ]);
+    ]
+  in
+  Alcotest.(check bool) "invalid hint rejected" true
+    (Result.is_error (Sampling.model_preferences_of_yojson json))
+
 (* --- create_message_params --- *)
 
 let test_create_message_params_roundtrip () =
@@ -327,6 +336,7 @@ let () =
     "model_preferences", [
       Alcotest.test_case "full" `Quick test_model_preferences_full;
       Alcotest.test_case "minimal" `Quick test_model_preferences_minimal;
+      Alcotest.test_case "invalid hint fails" `Quick test_model_preferences_invalid_hint_fails;
     ];
     "sampling_tool_choice", [
       Alcotest.test_case "auto" `Quick test_sampling_tool_choice_auto;
