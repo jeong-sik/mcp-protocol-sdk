@@ -18,6 +18,14 @@ let test_parse_with_quality () =
     Alcotest.(check (float 0.001)) "quality" 0.9 mt.quality
   | None -> Alcotest.fail "Failed to parse"
 
+let test_parse_case_insensitive () =
+  match Http_negotiation.parse_media_type "Application/JSON;Q=0.5" with
+  | Some mt ->
+    Alcotest.(check string) "type normalized" "application" mt.type_;
+    Alcotest.(check string) "subtype normalized" "json" mt.subtype;
+    Alcotest.(check (float 0.001)) "quality parsed" 0.5 mt.quality
+  | None -> Alcotest.fail "Failed to parse"
+
 let test_parse_with_params () =
   match Http_negotiation.parse_media_type "text/event-stream; charset=utf-8" with
   | Some mt ->
@@ -81,6 +89,8 @@ let test_media_type_no_match () =
 let test_accepts_sse () =
   Alcotest.(check bool) "sse header"
     true (Http_negotiation.accepts_sse "text/event-stream, application/json");
+  Alcotest.(check bool) "sse header case-insensitive"
+    true (Http_negotiation.accepts_sse "Text/Event-Stream, Application/JSON");
   Alcotest.(check bool) "no sse"
     false (Http_negotiation.accepts_sse "application/json");
   Alcotest.(check bool) "sse q=0 rejected (RFC 7231)"
@@ -91,6 +101,8 @@ let test_accepts_sse () =
 let test_accepts_json () =
   Alcotest.(check bool) "json header"
     true (Http_negotiation.accepts_json "application/json");
+  Alcotest.(check bool) "json header case-insensitive"
+    true (Http_negotiation.accepts_json "Application/JSON");
   Alcotest.(check bool) "wildcard accepts json"
     true (Http_negotiation.accepts_json "*/*");
   Alcotest.(check bool) "sse only"
@@ -196,6 +208,7 @@ let () =
     "parse_media_type", [
       Alcotest.test_case "simple" `Quick test_parse_simple;
       Alcotest.test_case "with quality" `Quick test_parse_with_quality;
+      Alcotest.test_case "case-insensitive" `Quick test_parse_case_insensitive;
       Alcotest.test_case "with params" `Quick test_parse_with_params;
       Alcotest.test_case "wildcard" `Quick test_parse_wildcard;
       Alcotest.test_case "invalid" `Quick test_parse_invalid;
