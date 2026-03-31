@@ -106,7 +106,7 @@ val add_task_handlers : task_handlers -> t -> t
 (** {2 Shared Client Helpers} *)
 
 (** Parse a JSON list field from a response, applying [parser] to each element.
-    Silently drops items that fail to parse. *)
+    Returns [Error] on the first invalid item instead of silently dropping it. *)
 val parse_list_field :
   string ->
   (Yojson.Safe.t -> ('a, string) result) ->

@@ -126,12 +126,18 @@ let parse_list_field field_name parser result =
   | `Assoc fields ->
     begin match List.assoc_opt field_name fields with
     | Some (`List items) ->
-      let parsed = List.filter_map (fun j ->
-        match parser j with
-        | Ok v -> Some v
-        | Error _ -> None
-      ) items in
-      Ok parsed
+      List.mapi
+        (fun idx j ->
+          parser j |> Result.map_error (fun err ->
+              Printf.sprintf "Invalid '%s' item at index %d: %s"
+                field_name idx err))
+        items
+      |> List.fold_left
+           (fun acc item ->
+             Result.bind acc (fun parsed ->
+                 Result.bind item (fun value -> Ok (value :: parsed))))
+           (Ok [])
+      |> Result.map List.rev
     | _ -> Error (Printf.sprintf "Missing '%s' array in response" field_name)
     end
   | _ -> Error "Invalid response format"
