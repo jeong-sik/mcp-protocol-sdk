@@ -16,7 +16,7 @@ Single opam package `mcp_protocol` with three sub-libraries:
 
 ## Project Status
 
-- Current version: `1.1.0`
+- Current version: `1.3.0`
 - Roadmap: [ROADMAP.md](ROADMAP.md)
 - Release policy: [docs/RELEASE-POLICY.md](docs/RELEASE-POLICY.md)
 - Contribution guide and issue labels: [CONTRIBUTING.md](CONTRIBUTING.md)
@@ -181,7 +181,7 @@ Or add to your `dune-project`:
 
 ```lisp
 (depends
- (mcp_protocol (>= 1.1.0)))
+ (mcp_protocol (>= 1.3.0)))
 ```
 
 Then use sub-libraries in your `dune` file:

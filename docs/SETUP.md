@@ -12,7 +12,7 @@ opam pin add mcp_protocol git+https://github.com/jeong-sik/mcp-protocol-sdk.git
 
 ```lisp
 (depends
- (mcp_protocol (>= 0.1.0)))
+ (mcp_protocol (>= 1.3.0)))
 ```
 
 ## 소스 빌드

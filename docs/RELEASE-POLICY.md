@@ -2,8 +2,8 @@
 
 ## Stable line
 
-- The stable line is `1.0.x`.
-- Non-breaking additions and fixes go into the next patch release.
+- The stable line is `1.x`.
+- Non-breaking additions and fixes go into the next patch or minor release.
 - Breaking API changes require a minor or major version bump with explicit migration notes.
 
 ## Required metadata
@@ -12,8 +12,6 @@ Every release candidate must keep these files in sync:
 
 - `dune-project`
 - `mcp_protocol.opam`
-- `mcp_protocol_eio.opam`
-- `mcp_protocol_http.opam`
 - top release entry in `CHANGELOG.md`
 - `examples/conformance_server.ml`
 
