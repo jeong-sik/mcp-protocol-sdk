@@ -236,14 +236,14 @@ let test_parse_list_field_missing () =
   Alcotest.(check bool) "missing field"
     true (Result.is_error (Handler.parse_list_field "items" parser json))
 
-let test_parse_list_field_drops_failures () =
+let test_parse_list_field_reports_failures () =
   let json = `Assoc [("items", `List [`String "ok"; `Int 42; `String "also"])] in
   let parser = function `String s -> Ok s | _ -> Error "not string" in
   match Handler.parse_list_field "items" parser json with
-  | Ok items ->
-    (* Int 42 silently dropped *)
-    Alcotest.(check (list string)) "filtered" ["ok"; "also"] items
-  | Error e -> Alcotest.fail e
+  | Ok _ -> Alcotest.fail "expected invalid item error"
+  | Error e ->
+    Alcotest.(check bool) "mentions item index" true
+      (String.equal e "Invalid 'items' item at index 1: not string")
 
 (* ── build_initialize_params ─────────────────── *)
 
@@ -335,7 +335,7 @@ let () =
     "helpers", [
       Alcotest.test_case "parse_list_field" `Quick test_parse_list_field_success;
       Alcotest.test_case "parse_list_field missing" `Quick test_parse_list_field_missing;
-      Alcotest.test_case "parse_list_field drops" `Quick test_parse_list_field_drops_failures;
+      Alcotest.test_case "parse_list_field reports invalid item" `Quick test_parse_list_field_reports_failures;
       Alcotest.test_case "build_init_params" `Quick test_build_init_params;
     ];
   ]

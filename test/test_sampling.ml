@@ -91,6 +91,15 @@ let test_model_preferences_minimal () =
     Alcotest.(check bool) "no cost" true (Option.is_none p'.cost_priority)
   | Error e -> Alcotest.fail e
 
+let test_model_preferences_invalid_hint_fails () =
+  let json =
+    `Assoc [
+      ("hints", `List [ `String "not-an-object" ]);
+    ]
+  in
+  Alcotest.(check bool) "invalid hint rejected" true
+    (Result.is_error (Sampling.model_preferences_of_yojson json))
+
 (* --- create_message_params --- *)
 
 let test_create_message_params_roundtrip () =
@@ -140,6 +149,28 @@ let test_create_message_params_minimal () =
     Alcotest.(check int) "max_tokens" 100 p'.max_tokens;
     Alcotest.(check bool) "no system" true (Option.is_none p'.system_prompt)
   | Error e -> Alcotest.fail e
+
+let test_create_message_params_invalid_tool_fails () =
+  let json =
+    `Assoc [
+      ("messages", `List []);
+      ("maxTokens", `Int 10);
+      ("tools", `List [ `Assoc [ ("description", `String "missing name") ] ]);
+    ]
+  in
+  Alcotest.(check bool) "invalid tool rejected" true
+    (Result.is_error (Sampling.create_message_params_of_yojson json))
+
+let test_create_message_params_invalid_include_context_fails () =
+  let json =
+    `Assoc [
+      ("messages", `List []);
+      ("maxTokens", `Int 10);
+      ("includeContext", `String "everywhere");
+    ]
+  in
+  Alcotest.(check bool) "invalid includeContext rejected" true
+    (Result.is_error (Sampling.create_message_params_of_yojson json))
 
 (* --- create_message_result --- *)
 
@@ -305,6 +336,7 @@ let () =
     "model_preferences", [
       Alcotest.test_case "full" `Quick test_model_preferences_full;
       Alcotest.test_case "minimal" `Quick test_model_preferences_minimal;
+      Alcotest.test_case "invalid hint fails" `Quick test_model_preferences_invalid_hint_fails;
     ];
     "sampling_tool_choice", [
       Alcotest.test_case "auto" `Quick test_sampling_tool_choice_auto;
@@ -319,6 +351,8 @@ let () =
     "create_message_params", [
       Alcotest.test_case "roundtrip" `Quick test_create_message_params_roundtrip;
       Alcotest.test_case "minimal" `Quick test_create_message_params_minimal;
+      Alcotest.test_case "invalid tool fails" `Quick test_create_message_params_invalid_tool_fails;
+      Alcotest.test_case "invalid include_context fails" `Quick test_create_message_params_invalid_include_context_fails;
       Alcotest.test_case "with tools" `Quick test_create_message_params_with_tools;
       Alcotest.test_case "no tools omitted" `Quick test_create_message_params_no_tools;
     ];
