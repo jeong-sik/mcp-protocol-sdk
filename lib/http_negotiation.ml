@@ -35,12 +35,14 @@ let parse_media_type s =
     let type_parts = String.split_on_char '/' (String.trim type_part) in
     match type_parts with
     | [type_; subtype] ->
+      let type_ = String.lowercase_ascii (String.trim type_) in
+      let subtype = String.lowercase_ascii (String.trim subtype) in
       let quality, params =
         List.fold_left (fun (q, ps) param ->
           let param = String.trim param in
           match String.split_on_char '=' param with
           | [k; v] ->
-            let k = String.trim k in
+            let k = String.lowercase_ascii (String.trim k) in
             let v = String.trim v in
             if k = "q" then
               ((try float_of_string v with Failure _ -> 1.0), ps)
@@ -61,7 +63,9 @@ let parse_accept_header header =
 
 (** Check if media type matches a pattern (supports wildcards) *)
 let media_type_matches ~pattern ~actual =
-  let pattern_parts = String.split_on_char '/' pattern in
+  let pattern_parts =
+    String.split_on_char '/' (String.lowercase_ascii pattern)
+  in
   match pattern_parts with
   | [ptype; psubtype] ->
     (ptype = "*" || ptype = actual.type_) &&
